@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/nest-cli",
+  "collection": "@nestjs/schematics",
+  "sourceRoot": "src",
+  "compilerOptions": {
+    "deleteOutDir": true,
+    "webpack": true
+  },
+  "projects": {
+    "entity-data-models": {
+      "type": "library",
+      "root": "libs/entity-data-models",
+      "entryFile": "index",
+      "sourceRoot": "libs/entity-data-models/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/entity-data-models/tsconfig.lib.json"
+      }
+    }
+  }
+}
