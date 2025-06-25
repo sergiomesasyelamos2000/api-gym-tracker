@@ -1,4 +1,8 @@
-import { ExerciseEntity, RoutineEntity } from '@app/entity-data-models';
+import {
+  ExerciseEntity,
+  RoutineEntity,
+  SetEntity,
+} from '@app/entity-data-models';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
@@ -15,7 +19,7 @@ import { RoutineModule } from './modules/routine/routine.module';
       username: 'postgres',
       password: 'postgres',
       database: 'gym_db',
-      entities: [RoutineEntity, ExerciseEntity],
+      entities: [RoutineEntity, ExerciseEntity, SetEntity],
       synchronize: true,
     }),
     ExercisesModule,

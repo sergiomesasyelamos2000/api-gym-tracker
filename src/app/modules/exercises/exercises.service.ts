@@ -1,5 +1,5 @@
 import { ExerciseEntity, ExerciseRequestDto } from '@app/entity-data-models';
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -9,23 +9,44 @@ export class ExercisesService {
     @InjectRepository(ExerciseEntity)
     public exerciseRepository: Repository<ExerciseEntity>,
   ) {}
-  create(exerciseRequestDto: ExerciseRequestDto) {
-    return `This action returns all exercises`;
+
+  async create(
+    exerciseRequestDto: ExerciseRequestDto,
+  ): Promise<ExerciseEntity> {
+    const newExercise = this.exerciseRepository.create(
+      exerciseRequestDto as Partial<ExerciseEntity>,
+    );
+    return await this.exerciseRepository.save(newExercise);
   }
 
-  findAll() {
-    return `This action returns all exercises`;
+  async findAll(): Promise<ExerciseEntity[]> {
+    return await this.exerciseRepository.find();
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} exercise`;
+  async findOne(id: string): Promise<ExerciseEntity> {
+    const exercise = await this.exerciseRepository.findOne({ where: { id } });
+    if (!exercise) {
+      throw new NotFoundException(`Exercise with ID ${id} not found`);
+    }
+    return exercise;
   }
 
-  update(id: number, exerciseRequestDto: ExerciseRequestDto) {
-    return `This action updates a #${id} exercise`;
+  async update(
+    id: string,
+    exerciseRequestDto: ExerciseRequestDto,
+  ): Promise<ExerciseEntity> {
+    const exercise = await this.findOne(id);
+    const updatedExercise = this.exerciseRepository.merge(
+      exercise,
+      exerciseRequestDto,
+    );
+
+    const savedExercise = await this.exerciseRepository.save(updatedExercise);
+    return savedExercise;
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} exercise`;
+  async remove(id: string): Promise<void> {
+    const exercise = await this.findOne(id);
+    await this.exerciseRepository.remove(exercise);
   }
 }

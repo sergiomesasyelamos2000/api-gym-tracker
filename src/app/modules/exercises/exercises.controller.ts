@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
 } from '@nestjs/common';
 import { ExercisesService } from './exercises.service';
 
@@ -21,24 +22,26 @@ export class ExercisesController {
 
   @Get()
   findAll() {
+    console.log('Fetching all exercises');
+
     return this.exercisesService.findAll();
   }
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.exercisesService.findOne(+id);
+    return this.exercisesService.findOne(id);
   }
 
-  @Patch(':id')
+  @Put(':id')
   update(
     @Param('id') id: string,
     @Body() exerciseRequestDto: ExerciseRequestDto,
   ) {
-    return this.exercisesService.update(+id, exerciseRequestDto);
+    return this.exercisesService.update(id, exerciseRequestDto);
   }
 
   @Delete(':id')
   remove(@Param('id') id: string) {
-    return this.exercisesService.remove(+id);
+    return this.exercisesService.remove(id);
   }
 }

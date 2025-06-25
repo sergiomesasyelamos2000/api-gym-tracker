@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn, ManyToOne } from 'typeorm';
+import { ExerciseEntity } from './exercise.entity';
 
 @Entity('sets')
 export class SetEntity {
@@ -14,18 +15,12 @@ export class SetEntity {
   order!: number;
 
   @ApiProperty({
-    description: 'Tipo de set, podría ser “warmup”, “working”, etc.',
-  })
-  @Column()
-  type!: string;
-
-  @ApiProperty({
     example: 100,
     nullable: true,
-    description: 'Peso levantado en kilogramos (si aplica)',
+    description: 'Peso levantado',
   })
   @Column({ type: 'float', nullable: true })
-  weight_kg?: number;
+  weight?: number;
 
   @ApiProperty({
     example: 10,
@@ -35,36 +30,6 @@ export class SetEntity {
   @Column({ type: 'int', nullable: true })
   reps?: number;
 
-  @ApiProperty({
-    example: null,
-    nullable: true,
-    description: 'Distancia en metros (si aplica)',
-  })
-  @Column({ type: 'float', nullable: true })
-  distance_meters?: number;
-
-  @ApiProperty({
-    example: null,
-    nullable: true,
-    description: 'Duración en segundos (si aplica)',
-  })
-  @Column({ type: 'int', nullable: true })
-  duration_seconds?: number;
-
-  @ApiProperty({
-    example: 9.5,
-    nullable: true,
-    description: 'RPE (esfuerzo percibido) registrado en el set',
-  })
-  @Column({ type: 'float', nullable: true })
-  rpe?: number;
-
-  @ApiProperty({
-    example: 50,
-    nullable: true,
-    description:
-      'Métrica personalizada, por ejemplo pisos o pasos en máquina de escaleras',
-  })
-  @Column({ type: 'int', nullable: true })
-  custom_metric?: number;
+  @ManyToOne(() => ExerciseEntity, (exercise) => exercise.sets)
+  exercise!: ExerciseEntity;
 }

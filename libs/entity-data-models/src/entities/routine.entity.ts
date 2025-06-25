@@ -4,8 +4,11 @@ import {
   Entity,
   OneToMany,
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
+import { ApiProperty } from '@nestjs/swagger';
 import { RoutineExerciseEntity } from './routine-exercise.entity';
+import { ExerciseEntity } from './exercise.entity';
 
 @Entity()
 export class RoutineEntity {
@@ -13,13 +16,26 @@ export class RoutineEntity {
   id!: string;
 
   @Column()
-  name!: string;
+  title!: string;
 
-  /* @OneToMany(() => RoutineExerciseEntity, (exercise) => exercise.routine, {
-    cascade: true,
-  })
-  routineExercises!: RoutineExerciseEntity[]; */
+  @Column()
+  totalTime!: number;
+
+  @Column()
+  totalWeight!: number;
+
+  @Column()
+  completedSets!: number;
 
   @CreateDateColumn()
   createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
+
+  @ApiProperty({ type: () => ExerciseEntity, isArray: true })
+  @OneToMany(() => ExerciseEntity, (exercise) => exercise.routine, {
+    cascade: true,
+  })
+  exercises!: ExerciseEntity[];
 }
