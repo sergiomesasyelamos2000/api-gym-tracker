@@ -1,9 +1,11 @@
+import { ExerciseRequestDto } from './exercise.model';
+
 export interface RoutineRequestDto {
-    name: string;
-    description: string;
-    exercises: {
-        exerciseId: string;
-        sets: number;
-        reps: number;
-    }[];
+  title: string;
+  totalTime?: number;
+  totalWeight?: number;
+  completedSets?: number;
+  createdAt: Date;
+  updatedAt?: Date;
+  exercises: ExerciseRequestDto[];
 }

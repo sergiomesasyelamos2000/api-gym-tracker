@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Column, Entity, PrimaryGeneratedColumn, ManyToOne } from 'typeorm';
 import { ExerciseEntity } from './exercise.entity';
+import { RoutineExerciseEntity } from './routine-exercise.entity';
 
 @Entity('sets')
 export class SetEntity {
@@ -30,6 +31,9 @@ export class SetEntity {
   @Column({ type: 'int', nullable: true })
   reps?: number;
 
-  @ManyToOne(() => ExerciseEntity, (exercise) => exercise.sets)
-  exercise!: ExerciseEntity;
+  @ManyToOne(
+    () => RoutineExerciseEntity,
+    (routineExercise) => routineExercise.sets,
+  )
+  routineExercise!: RoutineExerciseEntity;
 }

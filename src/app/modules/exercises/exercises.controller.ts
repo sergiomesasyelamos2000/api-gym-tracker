@@ -22,8 +22,6 @@ export class ExercisesController {
 
   @Get()
   findAll() {
-    console.log('Fetching all exercises');
-
     return this.exercisesService.findAll();
   }
 

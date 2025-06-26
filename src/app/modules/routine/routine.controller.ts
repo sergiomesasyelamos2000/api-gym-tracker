@@ -10,35 +10,35 @@ import {
 } from '@nestjs/common';
 import { RoutineService } from './routine.service';
 
-@Controller('routine')
+@Controller('routines')
 export class RoutineController {
   constructor(private readonly routineService: RoutineService) {}
 
   @Post()
-  create(@Body() routineRequestDto: RoutineRequestDto) {
-    return this.routineService.create(routineRequestDto);
+  async create(@Body() routineRequestDto: RoutineRequestDto) {
+    return await this.routineService.create(routineRequestDto);
   }
 
   @Get()
-  findAll() {
-    return this.routineService.findAll();
+  async findAll() {
+    return await this.routineService.findAll();
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.routineService.findOne(+id);
+  async findOne(@Param('id') id: string) {
+    return await this.routineService.findOne(id);
   }
 
   @Patch(':id')
-  update(
+  async update(
     @Param('id') id: string,
     @Body() routineRequestDto: RoutineRequestDto,
   ) {
-    return this.routineService.update(+id, routineRequestDto);
+    return await this.routineService.update(id, routineRequestDto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.routineService.remove(+id);
+  async remove(@Param('id') id: string) {
+    return await this.routineService.remove(id);
   }
 }

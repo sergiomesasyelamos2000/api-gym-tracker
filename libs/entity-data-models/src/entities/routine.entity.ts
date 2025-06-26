@@ -33,9 +33,9 @@ export class RoutineEntity {
   @UpdateDateColumn()
   updatedAt!: Date;
 
-  @ApiProperty({ type: () => ExerciseEntity, isArray: true })
-  @OneToMany(() => ExerciseEntity, (exercise) => exercise.routine, {
-    cascade: true,
-  })
-  exercises!: ExerciseEntity[];
+  @OneToMany(
+    () => RoutineExerciseEntity,
+    (routineExercise) => routineExercise.routine,
+  )
+  routineExercises!: RoutineExerciseEntity[];
 }

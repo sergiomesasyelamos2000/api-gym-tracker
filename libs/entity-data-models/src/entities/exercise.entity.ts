@@ -7,7 +7,7 @@ import {
 } from 'typeorm';
 
 import { ApiProperty } from '@nestjs/swagger';
-import { SetEntity, RoutineEntity } from './index';
+import { SetEntity, RoutineEntity, RoutineExerciseEntity } from './index';
 
 @Entity()
 export class ExerciseEntity {
@@ -39,10 +39,9 @@ export class ExerciseEntity {
   @Column({ nullable: true })
   restSeconds?: string;
 
-  @ApiProperty({ type: () => SetEntity, isArray: true })
-  @OneToMany(() => SetEntity, (set) => set.exercise, { cascade: true })
-  sets!: SetEntity[];
-
-  @ManyToOne(() => RoutineEntity, (routine) => routine.exercises)
-  routine!: RoutineEntity;
+  @OneToMany(
+    () => RoutineExerciseEntity,
+    (routineExercise) => routineExercise.exercise,
+  )
+  routineExercises!: RoutineExerciseEntity[];
 }
