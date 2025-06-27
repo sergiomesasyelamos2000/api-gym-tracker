@@ -10,6 +10,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ExercisesModule } from './modules/exercises/exercises.module';
 import { RoutineModule } from './modules/routine/routine.module';
+import { NutritionModule } from './modules/nutrition/nutrition.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { RoutineModule } from './modules/routine/routine.module';
     }),
     ExercisesModule,
     RoutineModule,
+    NutritionModule,
   ],
   controllers: [AppController],
   providers: [AppService],
