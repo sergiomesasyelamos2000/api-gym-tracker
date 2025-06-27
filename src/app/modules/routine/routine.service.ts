@@ -41,11 +41,13 @@ export class RoutineService {
         if (!exercise) {
           throw new Error(`Exercise with id ${exerciseDto.id} not found`);
         }
+        console.log('Creating routine exercise for:', routineRequestDto);
 
         const routineExercise = this.routineExerciseRepository.create({
           routine: savedRoutine,
           exercise,
           notes: exerciseDto.notes,
+          restSeconds: exerciseDto.restSeconds,
           sets: (exerciseDto.sets ?? []).map((set) => ({
             ...set,
           })),

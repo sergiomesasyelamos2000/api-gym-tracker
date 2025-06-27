@@ -35,4 +35,12 @@ export class RoutineExerciseEntity {
   })
   @Column({ nullable: true })
   notes?: string;
+
+  @ApiProperty({
+    example: '60',
+    description:
+      'El tiempo de descanso en segundos entre series del ejercicio.',
+  })
+  @Column({ nullable: true })
+  restSeconds?: string;
 }

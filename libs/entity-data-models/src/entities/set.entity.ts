@@ -31,6 +31,9 @@ export class SetEntity {
   @Column({ type: 'int', nullable: true })
   reps?: number;
 
+  @Column({ type: 'boolean', default: false })
+  completed?: boolean;
+
   @ManyToOne(
     () => RoutineExerciseEntity,
     (routineExercise) => routineExercise.sets,
