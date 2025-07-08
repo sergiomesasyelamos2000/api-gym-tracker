@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Get,
   Post,
+  Query,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -10,11 +12,11 @@ import { NutritionService } from './nutrition.service';
 
 @Controller('nutrition')
 export class NutritionController {
-  constructor(private nutrition: NutritionService) {}
+  constructor(private nutritionService: NutritionService) {}
 
   @Post()
   async chat(@Body('text') text: string) {
-    const base = await this.nutrition.chat(text);
+    const base = await this.nutritionService.chat(text);
     return { reply: base };
   }
 
@@ -25,14 +27,24 @@ export class NutritionController {
       throw new Error('No se recibió ningún archivo');
     }
 
-    const items = await this.nutrition.recognizeFood(file);
+    const items = await this.nutritionService.recognizeFood(file);
 
     return { items };
   }
 
   @Post('barcode')
-  async analyzeBarcode(@Body('code') code: string) {
-    const product = await this.nutrition.scanCode(code);
-    return product; // devuelve nombre, calorías, macros…
+  async scanBarcode(@Body() body: any) {
+    const product = await this.nutritionService.scanCode(body.code);
+    return product;
+  }
+
+  @Get('products')
+  async getAllProducts(
+    @Query('page') page: number = 1,
+    @Query('pageSize') pageSize: number = 20,
+  ) {
+    console.log('page:', page, 'pageSize:', pageSize);
+
+    return this.nutritionService.getAllProducts(page, pageSize);
   }
 }

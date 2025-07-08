@@ -1,8 +1,9 @@
 import { GoogleGenAI } from '@google/genai';
+import { HttpService } from '@nestjs/axios';
 import { Injectable } from '@nestjs/common';
 import { lastValueFrom } from 'rxjs';
 import { ENV } from '../../../environments/environment';
-import { HttpService } from '@nestjs/axios';
+import NUTRIENT_LABELS_ES from '../../utils/nutrients-labels';
 
 @Injectable()
 export class NutritionService {
@@ -49,7 +50,7 @@ export class NutritionService {
       const segmentation = {
         foodFamily: [
           {
-            id: 8,
+            code: 8,
             name: 'légumes',
             prob: 0.99560546875,
           },
@@ -561,7 +562,6 @@ export class NutritionService {
         fats: nutritionalInfo.nutritional_info?.totalNutrients.FAT || null,
         servingSize: nutritionalInfo.serving_size || null,
       };
-      console.log('Alimentos reconocidos:', response);
 
       return response;
     } catch (error) {
@@ -585,7 +585,6 @@ export class NutritionService {
         ),
       );
       const product = response.data.products[0];
-      console.log('Producto encontrado:', product);
 
       return {
         name: product.product_name,
@@ -602,13 +601,147 @@ export class NutritionService {
     try {
       const response = await lastValueFrom(
         this.httpService.get(
-          `https://world.openfoodfacts.org/api/v2/product/${code}?fields=product_name,nutriments`,
+          `https://world.openfoodfacts.net/api/v2/product/${code}?fields=product_name,nutrition_grades,nutriments,image_url&lc=es`,
         ),
       );
-      return response.data;
+      const product = response.data.product;
+
+      console.log('product obtenidos:', product);
+      // Mapeo de los campos principales
+      const mappedProduct = {
+        name: product.product_name ?? 'Producto sin nombre',
+        image: product.image_url ?? null,
+        nutritionGrade: product.nutrition_grades ?? null,
+        calories: product.nutriments?.['energy-kcal'] ?? null,
+        carbohydrates: product.nutriments?.['carbohydrates'] ?? null,
+        protein: product.nutriments?.['proteins'] ?? null,
+        fat: product.nutriments?.['fat'] ?? null,
+        others: Object.entries(product.nutriments ?? {})
+          .filter(
+            ([key]) =>
+              ![
+                'energy-kcal',
+                'energy',
+                'carbohydrates',
+                'proteins',
+                'fat',
+                'nova',
+              ].some((main) => key.startsWith(main)),
+          )
+          .map(([key, value]) => ({
+            label: NUTRIENT_LABELS_ES[key] ?? key,
+            value,
+          })),
+      };
+
+      return mappedProduct;
     } catch (error) {
       console.error('Error en la solicitud de escaneo de código:', error);
       throw new Error('No se pudo procesar la solicitud de escaneo de código.');
     }
   }
+
+  async getAllProducts(
+    page: number = 1,
+    pageSize: number = 100,
+  ): Promise<any[]> {
+    try {
+      const response = await lastValueFrom(
+        this.httpService.get(
+          `https://world.openfoodfacts.org/api/v2/search?search_terms=leche&search_simple=1&action=process&json=1&page=${page}&page_size=${pageSize}&fields=product_name,product_name_es,nutrition_grades,nutriments,image_url,code&lc=es`,
+        ),
+      );
+
+      const products = response.data.products || [];
+
+      console.log('Productos obtenidos:', page, pageSize);
+
+      // Mapea y elimina duplicados por código
+      const seenCodes = new Set<string>();
+      const uniqueProducts = products
+        .map((product: any) => ({
+          code: product.code,
+          name:
+            product.product_name_es ??
+            product.product_name ??
+            'Producto sin nombre',
+          image: product.image_url ?? null,
+          nutritionGrade: product.nutrition_grades ?? null,
+          grams: product.nutriments?.['serving_size']
+            ? parseInt(product.nutriments.serving_size)
+            : 100,
+          calories: product.nutriments?.['energy-kcal'] ?? null,
+          carbohydrates: product.nutriments?.['carbohydrates'] ?? null,
+          protein: product.nutriments?.['proteins'] ?? null,
+          fat: product.nutriments?.['fat'] ?? null,
+          others: Object.entries(product.nutriments ?? {})
+            .filter(
+              ([key]) =>
+                ![
+                  'energy-kcal',
+                  'energy',
+                  'carbohydrates',
+                  'proteins',
+                  'fat',
+                  'nova',
+                ].some((main) => key.startsWith(main)),
+            )
+            .map(([key, value]) => ({
+              label: NUTRIENT_LABELS_ES[key] ?? key,
+              value,
+            })),
+        }))
+        .filter((product) => {
+          if (seenCodes.has(product.code)) return false;
+          seenCodes.add(product.code);
+          return true;
+        });
+
+      return uniqueProducts;
+    } catch (error) {
+      throw new Error('No se pudo obtener el listado de productos.');
+    }
+  }
+
+  /* async getProductDetail(code: string): Promise<any> {
+    try {
+      const response = await lastValueFrom(
+        this.httpService.get(
+          `https://world.openfoodfacts.org/api/v2/product/${code}?fields=product_name,nutrition_grades,nutriments,image_url&lc=es`,
+        ),
+      );
+      const product = response.data.product;
+
+      const mappedProduct = {
+        name: product.product_name ?? 'Producto sin nombre',
+        image: product.image_url ?? null,
+        nutritionGrade: product.nutrition_grades ?? null,
+        calories: product.nutriments?.['energy-kcal'] ?? null,
+        carbohydrates: product.nutriments?.['carbohydrates'] ?? null,
+        protein: product.nutriments?.['proteins'] ?? null,
+        fat: product.nutriments?.['fat'] ?? null,
+        others: Object.entries(product.nutriments ?? {})
+          .filter(
+            ([key]) =>
+              ![
+                'energy-kcal',
+                'energy',
+                'carbohydrates',
+                'proteins',
+                'fat',
+                'nova',
+              ].some((main) => key.startsWith(main)),
+          )
+          .map(([key, value]) => ({
+            label: NUTRIENT_LABELS_ES[key] ?? key,
+            value,
+          })),
+      };
+
+      return mappedProduct;
+    } catch (error) {
+      console.error('Error obteniendo detalle del producto:', error);
+      throw new Error('No se pudo obtener el detalle del producto.');
+    }
+  } */
 }
