@@ -656,48 +656,38 @@ export class NutritionService {
 
       console.log('Productos obtenidos:', page, pageSize);
 
-      // Mapea y elimina duplicados por código
-      const seenCodes = new Set<string>();
-      const uniqueProducts = products
-        .map((product: any) => ({
-          code: product.code,
-          name:
-            product.product_name_es ??
-            product.product_name ??
-            'Producto sin nombre',
-          image: product.image_url ?? null,
-          nutritionGrade: product.nutrition_grades ?? null,
-          grams: product.nutriments?.['serving_size']
-            ? parseInt(product.nutriments.serving_size)
-            : 100,
-          calories: product.nutriments?.['energy-kcal'] ?? null,
-          carbohydrates: product.nutriments?.['carbohydrates'] ?? null,
-          protein: product.nutriments?.['proteins'] ?? null,
-          fat: product.nutriments?.['fat'] ?? null,
-          others: Object.entries(product.nutriments ?? {})
-            .filter(
-              ([key]) =>
-                ![
-                  'energy-kcal',
-                  'energy',
-                  'carbohydrates',
-                  'proteins',
-                  'fat',
-                  'nova',
-                ].some((main) => key.startsWith(main)),
-            )
-            .map(([key, value]) => ({
-              label: NUTRIENT_LABELS_ES[key] ?? key,
-              value,
-            })),
-        }))
-        .filter((product) => {
-          if (seenCodes.has(product.code)) return false;
-          seenCodes.add(product.code);
-          return true;
-        });
-
-      return uniqueProducts;
+      return products.map((product: any) => ({
+        code: product.code,
+        name:
+          product.product_name_es ??
+          product.product_name ??
+          'Producto sin nombre',
+        image: product.image_url ?? null,
+        nutritionGrade: product.nutrition_grades ?? null,
+        grams: product.nutriments?.['serving_size']
+          ? parseInt(product.nutriments.serving_size)
+          : 100,
+        calories: product.nutriments?.['energy-kcal'] ?? null,
+        carbohydrates: product.nutriments?.['carbohydrates'] ?? null,
+        protein: product.nutriments?.['proteins'] ?? null,
+        fat: product.nutriments?.['fat'] ?? null,
+        others: Object.entries(product.nutriments ?? {})
+          .filter(
+            ([key]) =>
+              ![
+                'energy-kcal',
+                'energy',
+                'carbohydrates',
+                'proteins',
+                'fat',
+                'nova',
+              ].some((main) => key.startsWith(main)),
+          )
+          .map(([key, value]) => ({
+            label: NUTRIENT_LABELS_ES[key] ?? key,
+            value,
+          })),
+      }));
     } catch (error) {
       throw new Error('No se pudo obtener el listado de productos.');
     }
