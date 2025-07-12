@@ -37,6 +37,7 @@ export class SetEntity {
   @ManyToOne(
     () => RoutineExerciseEntity,
     (routineExercise) => routineExercise.sets,
+    { onDelete: 'CASCADE' },
   )
   routineExercise!: RoutineExerciseEntity;
 }

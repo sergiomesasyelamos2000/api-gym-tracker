@@ -2,6 +2,7 @@ import {
   ExerciseEntity,
   RoutineEntity,
   RoutineExerciseEntity,
+  SetEntity,
 } from '@app/entity-data-models';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -16,6 +17,7 @@ import { RoutineService } from './routine.service';
       RoutineEntity,
       RoutineExerciseEntity,
       ExerciseEntity,
+      SetEntity,
     ]),
   ],
   exports: [TypeOrmModule],
