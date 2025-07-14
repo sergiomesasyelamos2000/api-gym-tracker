@@ -8,7 +8,7 @@ import {
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { log } from 'console';
-import { Repository } from 'typeorm';
+import { Repository, Like } from 'typeorm';
 
 @Injectable()
 export class RoutineService {
@@ -142,5 +142,68 @@ export class RoutineService {
 
   async remove(id: string): Promise<void> {
     await this.routineRepository.delete(id);
+  }
+
+  async duplicate(id: string): Promise<RoutineEntity> {
+    const original = await this.findOneWithExercises(id);
+    if (!original) throw new Error(`Routine with id ${id} not found`);
+
+    // Extrae el nombre base (sin sufijo)
+    const baseTitle = original.title.replace(/\s\(\d+\)$/, '');
+
+    // Busca todas las rutinas que empiezan por el nombre base
+    const allCopies = await this.routineRepository.find({
+      where: [{ title: baseTitle }, { title: Like(`${baseTitle} (%)`) }],
+      select: ['title'],
+    });
+
+    // Encuentra el siguiente sufijo disponible
+    let maxNumber = 1;
+    allCopies.forEach((r) => {
+      const match = r.title.match(/\((\d+)\)$/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNumber) maxNumber = num;
+      }
+    });
+
+    const newTitle = `${baseTitle} (${maxNumber + 1})`;
+
+    const newRoutine = this.routineRepository.create({
+      title: newTitle,
+      totalTime: original.totalTime,
+      totalWeight: original.totalWeight,
+      completedSets: original.completedSets,
+    });
+    const savedRoutine = await this.routineRepository.save(newRoutine);
+
+    const routineExercises = original.routineExercises.map(async (re: any) => {
+      const exercise = await this.exerciseRepository.findOne({
+        where: { id: re.exercise.id },
+      });
+
+      if (!exercise) {
+        throw new Error(`Exercise with id ${re.exercise.id} not found`);
+      }
+
+      const routineExercise = this.routineExerciseRepository.create({
+        routine: savedRoutine,
+        exercise: exercise,
+        notes: re.notes,
+        restSeconds: re.restSeconds,
+        sets: (re.sets ?? []).map((set: any) => ({
+          weight: set.weight,
+          reps: set.reps,
+          order: set.order,
+          completed: false,
+        })),
+      });
+
+      return await this.routineExerciseRepository.save(routineExercise);
+    });
+
+    await Promise.all(routineExercises);
+
+    return savedRoutine;
   }
 }

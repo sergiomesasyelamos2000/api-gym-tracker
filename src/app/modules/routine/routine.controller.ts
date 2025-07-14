@@ -48,4 +48,9 @@ export class RoutineController {
   async remove(@Param('id') id: string) {
     return await this.routineService.remove(id);
   }
+
+  @Post(':id/duplicate')
+  async duplicateRoutine(@Param('id') id: string) {
+    return await this.routineService.duplicate(id);
+  }
 }
