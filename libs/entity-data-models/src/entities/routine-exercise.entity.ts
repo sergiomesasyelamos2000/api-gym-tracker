@@ -22,11 +22,15 @@ export class RoutineExerciseEntity {
 
   @ManyToOne(() => RoutineEntity, (routine) => routine.routineExercises, {
     eager: true,
+    onDelete: 'CASCADE',
   })
   routine!: RoutineEntity;
 
   @ApiProperty({ type: () => SetEntity, isArray: true })
-  @OneToMany(() => SetEntity, (set) => set.routineExercise, { cascade: true })
+  @OneToMany(() => SetEntity, (set) => set.routineExercise, {
+    cascade: true,
+    onDelete: 'CASCADE',
+  })
   sets!: SetEntity[];
 
   @ApiProperty({

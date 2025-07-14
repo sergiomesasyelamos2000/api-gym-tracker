@@ -36,6 +36,7 @@ export class RoutineEntity {
   @OneToMany(
     () => RoutineExerciseEntity,
     (routineExercise) => routineExercise.routine,
+    { cascade: true, onDelete: 'CASCADE' },
   )
   routineExercises!: RoutineExerciseEntity[];
 }

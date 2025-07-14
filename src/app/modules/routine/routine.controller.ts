@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -45,8 +46,9 @@ export class RoutineController {
   }
 
   @Delete(':id')
-  async remove(@Param('id') id: string) {
-    return await this.routineService.remove(id);
+  @HttpCode(204)
+  async remove(@Param('id') id: string): Promise<void> {
+    await this.routineService.remove(id);
   }
 
   @Post(':id/duplicate')
