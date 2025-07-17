@@ -11,6 +11,7 @@ import { AppService } from './app.service';
 import { ExercisesModule } from './modules/exercises/exercises.module';
 import { RoutineModule } from './modules/routine/routine.module';
 import { NutritionModule } from './modules/nutrition/nutrition.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { NutritionModule } from './modules/nutrition/nutrition.module';
       ],
       synchronize: true,
     }),
+    ScheduleModule.forRoot(),
     ExercisesModule,
     RoutineModule,
     NutritionModule,

@@ -1,28 +1,35 @@
-import {
-  Column,
-  Entity,
-  ManyToOne,
-  OneToMany,
-  PrimaryGeneratedColumn,
-} from 'typeorm';
+import { Column, Entity, OneToMany, PrimaryColumn } from 'typeorm';
 
-import { ApiProperty } from '@nestjs/swagger';
-import { SetEntity, RoutineEntity, RoutineExerciseEntity } from './index';
+import { RoutineExerciseEntity } from './index';
 
 @Entity()
 export class ExerciseEntity {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryColumn()
   id!: string;
 
-  @ApiProperty({ example: 'My exercise title' })
   @Column()
-  title!: string;
-
-  @Column()
-  muscularGroup!: string;
+  name: string;
 
   @Column({ nullable: true })
-  photoUrl?: string;
+  imageUrl?: string;
+
+  @Column({ nullable: true })
+  giftUrl?: string;
+
+  @Column('simple-array')
+  equipments: string[];
+
+  @Column('simple-array')
+  bodyParts: string[];
+
+  @Column('simple-array')
+  targetMuscles: string[];
+
+  @Column('simple-array', { nullable: true })
+  secondaryMuscles?: string[];
+
+  @Column('simple-array')
+  instructions: string[];
 
   @OneToMany(
     () => RoutineExerciseEntity,
