@@ -20,9 +20,9 @@ export class ExercisesService {
     public exerciseRepository: Repository<ExerciseEntity>,
     private readonly httpService: HttpService,
   ) {
-    setTimeout(() => {
+    /* setTimeout(() => {
       this.importFromJson();
-    }, 500);
+    }, 500); */
   }
 
   async create(
