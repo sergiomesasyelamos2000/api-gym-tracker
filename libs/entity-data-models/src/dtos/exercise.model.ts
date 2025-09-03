@@ -8,4 +8,6 @@ export interface ExerciseRequestDto {
   notes?: string;
   restSeconds?: string;
   sets?: SetRequestDto[];
+  weightUnit: 'kg' | 'lbs';
+  repsType: 'reps' | 'range';
 }

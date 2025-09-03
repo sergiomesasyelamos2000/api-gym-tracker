@@ -47,4 +47,18 @@ export class RoutineExerciseEntity {
   })
   @Column({ nullable: true })
   restSeconds?: string;
+
+  @Column({
+    type: 'enum',
+    enum: ['kg', 'lbs'],
+    default: 'kg',
+  })
+  weightUnit: 'kg' | 'lbs';
+
+  @Column({
+    type: 'enum',
+    enum: ['reps', 'range'],
+    default: 'reps',
+  })
+  repsType: 'reps' | 'range';
 }

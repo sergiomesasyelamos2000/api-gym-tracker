@@ -1,7 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Column, Entity, PrimaryGeneratedColumn, ManyToOne } from 'typeorm';
-import { ExerciseEntity } from './exercise.entity';
+import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { RoutineExerciseEntity } from './routine-exercise.entity';
+
+export enum WeightUnit {
+  KG = 'kg',
+  LBS = 'lbs',
+}
+
+export enum RepsType {
+  REPS = 'reps',
+  RANGE = 'range',
+}
 
 @Entity('sets')
 export class SetEntity {
@@ -33,6 +42,20 @@ export class SetEntity {
 
   @Column({ type: 'boolean', default: false })
   completed?: boolean;
+
+  @Column({
+    type: 'enum',
+    enum: WeightUnit,
+    default: WeightUnit.KG,
+  })
+  weightUnit!: WeightUnit;
+
+  @Column({
+    type: 'enum',
+    enum: RepsType,
+    default: RepsType.REPS,
+  })
+  repsType!: RepsType;
 
   @ManyToOne(
     () => RoutineExerciseEntity,
