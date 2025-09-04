@@ -46,7 +46,6 @@ export class RoutineService {
           throw new Error(`Exercise with id ${exerciseDto.id} not found`);
         }
 
-        // 1. Crear routineExercise sin sets
         const routineExercise = this.routineExerciseRepository.create({
           routine: savedRoutine,
           exercise,
@@ -58,7 +57,6 @@ export class RoutineService {
         const savedRoutineExercise =
           await this.routineExerciseRepository.save(routineExercise);
 
-        // 2. Crear los sets asociados
         if (exerciseDto.sets && exerciseDto.sets.length > 0) {
           const sets = exerciseDto.sets.map((set) =>
             this.setRepository.create({
@@ -77,7 +75,26 @@ export class RoutineService {
     );
 
     await Promise.all(routineExercises);
-    return savedRoutine;
+
+    // 👇 Forzamos a que devuelva siempre una rutina, no null
+    const fullRoutine = await this.routineRepository.findOne({
+      where: { id: savedRoutine.id },
+      relations: [
+        'routineExercises',
+        'routineExercises.exercise',
+        'routineExercises.sets',
+      ],
+    });
+
+    console.log('Created routine:', fullRoutine);
+
+    if (!fullRoutine) {
+      throw new Error(
+        `Routine with id ${savedRoutine.id} not found after creation`,
+      );
+    }
+
+    return fullRoutine;
   }
 
   async findOne(id: string): Promise<RoutineEntity> {

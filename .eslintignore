@@ -1,0 +1,17 @@
+# .eslintignore
+dist/
+node_modules/
+coverage/
+*.min.js
+*.d.ts
+.env
+.env.*
+docker-compose.yml
+Dockerfile
+build/
+.eslintrc.*
+.prettierrc
+jest.config.*
+webpack.config.*
+**/migrations/*
+**/seeds/*
