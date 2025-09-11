@@ -1,4 +1,8 @@
-import { RoutineEntity, RoutineRequestDto } from '@app/entity-data-models';
+import {
+  RoutineEntity,
+  RoutineRequestDto,
+  RoutineSessionRequestDto,
+} from '@app/entity-data-models';
 import {
   Body,
   Controller,
@@ -22,14 +26,21 @@ export class RoutineController {
     private readonly routineService: RoutineService,
   ) {}
 
+  @Get('sessions')
+  async getAllSessions() {
+    return this.routineService.getAllSessions();
+  }
+
   @Post()
   async create(@Body() routineRequestDto: RoutineRequestDto) {
+    console.log('Creating routine with data:', routineRequestDto);
+
     return await this.routineService.create(routineRequestDto);
   }
 
   @Get()
   async findAll() {
-    return await this.routineRepository.find();
+    return this.routineService.findAll();
   }
 
   @Get(':id')
@@ -54,5 +65,23 @@ export class RoutineController {
   @Post(':id/duplicate')
   async duplicateRoutine(@Param('id') id: string) {
     return await this.routineService.duplicate(id);
+  }
+
+  @Post(':id/sessions')
+  async addSession(
+    @Param('id') id: string,
+    @Body() dto: RoutineSessionRequestDto,
+  ) {
+    return await this.routineService.addSession({ ...dto, routineId: id });
+  }
+
+  @Get(':id/sessions')
+  async getSessions(@Param('id') id: string) {
+    return await this.routineService.getSessions(id);
+  }
+
+  @Get('stats/global')
+  async getGlobalStats() {
+    return await this.routineService.getGlobalStats();
   }
 }

@@ -9,6 +9,7 @@ import {
 import { ApiProperty } from '@nestjs/swagger';
 import { RoutineExerciseEntity } from './routine-exercise.entity';
 import { ExerciseEntity } from './exercise.entity';
+import { RoutineSessionEntity } from './routine-session.entity';
 
 @Entity()
 export class RoutineEntity {
@@ -18,8 +19,8 @@ export class RoutineEntity {
   @Column()
   title!: string;
 
-  @Column()
-  totalTime!: number;
+  @Column({ type: 'int', default: 0 })
+  totalTime!: number; // en segundos
 
   @Column()
   totalWeight!: number;
@@ -35,8 +36,13 @@ export class RoutineEntity {
 
   @OneToMany(
     () => RoutineExerciseEntity,
-    (routineExercise) => routineExercise.routine,
+    routineExercise => routineExercise.routine,
     { cascade: true, onDelete: 'CASCADE' },
   )
   routineExercises!: RoutineExerciseEntity[];
+
+  @OneToMany(() => RoutineSessionEntity, session => session.routine, {
+    cascade: true,
+  })
+  sessions!: RoutineSessionEntity[];
 }

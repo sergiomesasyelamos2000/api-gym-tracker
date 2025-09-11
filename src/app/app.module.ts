@@ -3,6 +3,7 @@ import {
   ExerciseEntity,
   RoutineEntity,
   RoutineExerciseEntity,
+  RoutineSessionEntity,
   SetEntity,
 } from '@app/entity-data-models';
 import { Module } from '@nestjs/common';
@@ -28,6 +29,7 @@ import { ScheduleModule } from '@nestjs/schedule';
         ExerciseEntity,
         SetEntity,
         RoutineExerciseEntity,
+        RoutineSessionEntity,
       ],
       synchronize: true,
     }),

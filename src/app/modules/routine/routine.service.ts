@@ -7,6 +7,8 @@ import {
   RoutineEntity,
   RoutineExerciseEntity,
   RoutineRequestDto,
+  RoutineSessionEntity,
+  RoutineSessionRequestDto,
   SetEntity,
 } from '@app/entity-data-models';
 import { Injectable } from '@nestjs/common';
@@ -24,21 +26,20 @@ export class RoutineService {
     private readonly exerciseRepository: Repository<ExerciseEntity>,
     @InjectRepository(SetEntity)
     private readonly setRepository: Repository<SetEntity>,
+    @InjectRepository(RoutineSessionEntity)
+    private readonly sessionRepository: Repository<RoutineSessionEntity>,
   ) {}
 
   async create(routineRequestDto: RoutineRequestDto): Promise<RoutineEntity> {
     const routine = this.routineRepository.create({
       title: routineRequestDto.title,
-      totalTime: routineRequestDto.totalTime ?? 0,
-      totalWeight: routineRequestDto.totalWeight ?? 0,
-      completedSets: routineRequestDto.completedSets ?? 0,
     });
 
     const savedRoutine = await this.routineRepository.save(routine);
 
     // Crear los ejercicios asociados
     const routineExercises = routineRequestDto.exercises.map(
-      async (exerciseDto) => {
+      async exerciseDto => {
         const exercise = await this.exerciseRepository.findOne({
           where: { id: exerciseDto.id },
         });
@@ -58,7 +59,7 @@ export class RoutineService {
           await this.routineExerciseRepository.save(routineExercise);
 
         if (exerciseDto.sets && exerciseDto.sets.length > 0) {
-          const sets = exerciseDto.sets.map((set) =>
+          const sets = exerciseDto.sets.map(set =>
             this.setRepository.create({
               order: set.order,
               weight: set.weight,
@@ -119,15 +120,18 @@ export class RoutineService {
     });
   }
 
+  async findAll(): Promise<RoutineEntity[]> {
+    return this.routineRepository.find({
+      order: { createdAt: 'DESC' },
+    });
+  }
+
   async update(
     id: string,
     routineRequestDto: RoutineRequestDto,
   ): Promise<RoutineEntity> {
     await this.routineRepository.update(id, {
       title: routineRequestDto.title,
-      totalTime: routineRequestDto.totalTime ?? 0,
-      totalWeight: routineRequestDto.totalWeight ?? 0,
-      completedSets: routineRequestDto.completedSets ?? 0,
     });
 
     const routine = await this.routineRepository.findOne({ where: { id } });
@@ -138,7 +142,7 @@ export class RoutineService {
 
     // Crear los nuevos ejercicios
     const newRoutineExercises = routineRequestDto.exercises.map(
-      async (exerciseDto) => {
+      async exerciseDto => {
         const exercise = await this.exerciseRepository.findOne({
           where: { id: exerciseDto.id },
         });
@@ -160,7 +164,7 @@ export class RoutineService {
 
         // 2. Guardar sets asociados
         if (exerciseDto.sets && exerciseDto.sets.length > 0) {
-          const sets = exerciseDto.sets.map((set) =>
+          const sets = exerciseDto.sets.map(set =>
             this.setRepository.create({
               order: set.order,
               weight: set.weight,
@@ -200,7 +204,7 @@ export class RoutineService {
     });
 
     let maxNumber = 1;
-    allCopies.forEach((r) => {
+    allCopies.forEach(r => {
       const match = r.title.match(/\((\d+)\)$/);
       if (match) {
         const num = parseInt(match[1], 10);
@@ -212,9 +216,6 @@ export class RoutineService {
 
     const newRoutine = this.routineRepository.create({
       title: newTitle,
-      totalTime: original.totalTime,
-      totalWeight: original.totalWeight,
-      completedSets: original.completedSets,
     });
     const savedRoutine = await this.routineRepository.save(newRoutine);
 
@@ -257,5 +258,52 @@ export class RoutineService {
 
     await Promise.all(routineExercises);
     return savedRoutine;
+  }
+
+  async addSession(
+    dto: RoutineSessionRequestDto,
+  ): Promise<RoutineSessionEntity> {
+    const routine = await this.routineRepository.findOne({
+      where: { id: dto.routineId },
+    });
+    if (!routine) {
+      throw new Error(`Routine with id ${dto.routineId} not found`);
+    }
+
+    const session = this.sessionRepository.create({
+      routine,
+      totalTime: dto.totalTime,
+      totalWeight: dto.totalWeight,
+      completedSets: dto.completedSets,
+    });
+
+    return await this.sessionRepository.save(session);
+  }
+
+  async getAllSessions() {
+    return this.sessionRepository.find({
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async getSessions(routineId: string): Promise<RoutineSessionEntity[]> {
+    return await this.sessionRepository.find({
+      where: { routine: { id: routineId } },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async getGlobalStats(): Promise<{
+    totalTime: number;
+    totalWeight: number;
+    completedSets: number;
+  }> {
+    const sessions = await this.sessionRepository.find();
+
+    return {
+      totalTime: sessions.reduce((acc, s) => acc + s.totalTime, 0),
+      totalWeight: sessions.reduce((acc, s) => acc + s.totalWeight, 0),
+      completedSets: sessions.reduce((acc, s) => acc + s.completedSets, 0),
+    };
   }
 }
