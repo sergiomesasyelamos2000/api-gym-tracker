@@ -64,10 +64,17 @@ export class RoutineService {
               order: set.order,
               weight: set.weight,
               reps: set.reps,
+              repsMin: set.repsMin,
+              repsMax: set.repsMax,
               completed: set.completed ?? false,
+              weightUnit: set.weightUnit || 'kg',
+              repsType: set.repsType || 'reps',
               routineExercise: savedRoutineExercise,
             }),
           );
+
+          console.log('Saving sets:', sets);
+
           await this.setRepository.save(sets);
         }
 
@@ -169,10 +176,17 @@ export class RoutineService {
               order: set.order,
               weight: set.weight,
               reps: set.reps,
+              repsMin: set.repsMin,
+              repsMax: set.repsMax,
               completed: set.completed ?? false,
+              weightUnit: set.weightUnit || 'kg',
+              repsType: set.repsType || 'reps',
               routineExercise: savedRoutineExercise,
             }),
           );
+
+          console.log('Saving sets:', sets);
+
           await this.setRepository.save(sets);
         }
 
@@ -246,6 +260,8 @@ export class RoutineService {
             order: set.order,
             weight: set.weight,
             reps: set.reps,
+            repsMin: set.repsMin,
+            repsMax: set.repsMax,
             completed: false,
             routineExercise: savedRoutineExercise,
           }),
@@ -282,6 +298,12 @@ export class RoutineService {
 
   async getAllSessions() {
     return this.sessionRepository.find({
+      relations: [
+        'routine',
+        'routine.routineExercises',
+        'routine.routineExercises.exercise',
+        'routine.routineExercises.sets',
+      ],
       order: { createdAt: 'DESC' },
     });
   }

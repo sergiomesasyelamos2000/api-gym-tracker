@@ -40,26 +40,24 @@ export class SetEntity {
   @Column({ type: 'int', nullable: true })
   reps?: number;
 
+  @Column({ type: 'int', nullable: true })
+  repsMin?: number;
+
+  @Column({ type: 'int', nullable: true })
+  repsMax?: number;
+
   @Column({ type: 'boolean', default: false })
   completed?: boolean;
 
-  @Column({
-    type: 'enum',
-    enum: WeightUnit,
-    default: WeightUnit.KG,
-  })
-  weightUnit!: WeightUnit;
+  @Column({ type: 'varchar', default: 'kg' })
+  weightUnit!: string;
 
-  @Column({
-    type: 'enum',
-    enum: RepsType,
-    default: RepsType.REPS,
-  })
-  repsType!: RepsType;
+  @Column({ type: 'varchar', default: 'reps' })
+  repsType!: string;
 
   @ManyToOne(
     () => RoutineExerciseEntity,
-    (routineExercise) => routineExercise.sets,
+    routineExercise => routineExercise.sets,
     { onDelete: 'CASCADE' },
   )
   routineExercise!: RoutineExerciseEntity;

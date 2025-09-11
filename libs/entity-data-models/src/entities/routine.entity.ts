@@ -22,12 +22,6 @@ export class RoutineEntity {
   @Column({ type: 'int', default: 0 })
   totalTime!: number; // en segundos
 
-  @Column()
-  totalWeight!: number;
-
-  @Column()
-  completedSets!: number;
-
   @CreateDateColumn()
   createdAt!: Date;
 
