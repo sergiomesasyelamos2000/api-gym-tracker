@@ -5,9 +5,9 @@ import {
   Delete,
   Get,
   Param,
-  Patch,
   Post,
   Put,
+  Query,
 } from '@nestjs/common';
 import { ExercisesService } from './exercises.service';
 
@@ -23,6 +23,11 @@ export class ExercisesController {
   @Get()
   findAll() {
     return this.exercisesService.findAll();
+  }
+
+  @Get('search')
+  searchByName(@Query('name') name: string) {
+    return this.exercisesService.searchByName(name);
   }
 
   @Get(':id')
@@ -41,5 +46,11 @@ export class ExercisesController {
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.exercisesService.remove(id);
+  }
+
+  // Nuevo endpoint para sincronizar con ExerciseDB
+  @Post('sync')
+  syncWithExerciseDB() {
+    return this.exercisesService.syncWithExerciseDB();
   }
 }

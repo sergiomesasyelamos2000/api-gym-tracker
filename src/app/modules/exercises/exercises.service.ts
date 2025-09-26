@@ -1,28 +1,32 @@
 import { ExerciseEntity, ExerciseRequestDto } from '@app/entity-data-models';
 import { HttpService } from '@nestjs/axios';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as fs from 'fs';
 import { Repository } from 'typeorm';
 import axios from 'axios';
+import { firstValueFrom } from 'rxjs';
+
 const sharp = require('sharp');
 
 @Injectable()
-export class ExercisesService {
-  private readonly base = 'https://exercisedb.p.rapidapi.com/exercises';
+export class ExercisesService implements OnModuleInit {
+  private readonly logger = new Logger(ExercisesService.name);
+  private readonly baseUrl = 'https://v1.exercisedb.dev/api/v1';
 
-  private readonly headers = {
-    'X-RapidAPI-Key': 'd4a42f5372msh2cda38dd85f24b9p1c4167jsn7d3366fa6d38',
-    'X-RapidAPI-Host': 'exercisedb.p.rapidapi.com',
-  };
   constructor(
     @InjectRepository(ExerciseEntity)
     public exerciseRepository: Repository<ExerciseEntity>,
     private readonly httpService: HttpService,
-  ) {
-    /* setTimeout(() => {
-      this.importFromJson();
-    }, 500); */
+  ) {}
+
+  async onModuleInit() {
+    //await this.syncWithExerciseDB();
   }
 
   async create(
@@ -65,7 +69,226 @@ export class ExercisesService {
     await this.exerciseRepository.remove(exercise);
   }
 
+  /**
+   * Sincroniza con ExerciseDB v1 (gratuito, sin API key requerida)
+   */
+  // exercises.service.ts - Método syncWithExerciseDB corregido
+  async syncWithExerciseDB(): Promise<{ message: string; count: number }> {
+    try {
+      this.logger.log('Iniciando sincronización con ExerciseDB v1...');
+
+      let allExercises: any[] = [];
+      let currentPage = 1;
+      let hasMorePages = true;
+      const limit = 100; // Máximo permitido por la API
+
+      // Obtener todas las páginas mediante paginación
+      while (hasMorePages) {
+        this.logger.log(`Obteniendo página ${currentPage}...`);
+
+        const url = `${this.baseUrl}/exercises?offset=${(currentPage - 1) * limit}&limit=${limit}`;
+
+        const response = await firstValueFrom(
+          this.httpService.get(url, {
+            headers: {
+              'User-Agent': 'GymTrackerApp/1.0',
+            },
+          }),
+        );
+
+        if (response.status !== 200) {
+          throw new Error(
+            `Error HTTP ${response.status} al obtener página ${currentPage}`,
+          );
+        }
+
+        const responseData = response.data;
+
+        // Verificar la estructura de la respuesta
+        if (!responseData.success) {
+          throw new Error(
+            `API returned success: false for page ${currentPage}`,
+          );
+        }
+
+        if (!responseData.data || !Array.isArray(responseData.data)) {
+          this.logger.error(
+            `Estructura inesperada en página ${currentPage}:`,
+            responseData,
+          );
+          throw new Error(
+            `Estructura de datos inesperada en página ${currentPage}`,
+          );
+        }
+
+        // Agregar los ejercicios de esta página
+        allExercises = [...allExercises, ...responseData.data];
+        this.logger.log(
+          `Página ${currentPage}: obtenidos ${responseData.data.length} ejercicios. Total acumulado: ${allExercises.length}`,
+        );
+
+        // Verificar si hay más páginas
+        if (responseData.metadata && responseData.metadata.nextPage) {
+          currentPage++;
+
+          // Opcional: pequeño delay para no saturar la API
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } else {
+          hasMorePages = false;
+          this.logger.log(
+            `No hay más páginas. Total de ejercicios obtenidos: ${allExercises.length}`,
+          );
+        }
+
+        // Safety check: evitar bucles infinitos
+        if (currentPage > 50) {
+          // Máximo 50 páginas como seguridad
+          this.logger.warn('Se alcanzó el límite de seguridad de 50 páginas');
+          hasMorePages = false;
+        }
+      }
+
+      if (allExercises.length === 0) {
+        this.logger.warn('No se obtuvieron ejercicios de ExerciseDB');
+        return {
+          message: 'No se obtuvieron ejercicios de ExerciseDB',
+          count: 0,
+        };
+      }
+
+      this.logger.log(`Procesando ${allExercises.length} ejercicios...`);
+
+      // Procesar en lotes para mejor performance
+      const batchSize = 50;
+      const entities: ExerciseEntity[] = [];
+
+      for (let i = 0; i < allExercises.length; i += batchSize) {
+        const batch = allExercises.slice(i, i + batchSize);
+
+        const batchEntities = await Promise.all(
+          batch.map(async (item: any) => {
+            return await this.mapToExerciseEntity(item);
+          }),
+        );
+
+        entities.push(...batchEntities);
+
+        const progress = Math.min(i + batchSize, allExercises.length);
+        this.logger.log(
+          `Procesado lote ${Math.floor(i / batchSize) + 1}: ${progress}/${allExercises.length} ejercicios`,
+        );
+      }
+
+      // Limpiar la tabla antes de insertar nuevos datos (opcional)
+      await this.exerciseRepository.createQueryBuilder().delete().execute();
+
+      // Guardar todos los ejercicios
+      await this.exerciseRepository.save(entities, { chunk: 100 });
+
+      this.logger.log(
+        `Sincronización completada: ${entities.length} ejercicios guardados en la base de datos`,
+      );
+
+      return {
+        message: `Sincronización completada exitosamente. ${entities.length} ejercicios guardados.`,
+        count: entities.length,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error en sincronización: ${error.message}`,
+        error.stack,
+      );
+
+      return {
+        message: `Error en sincronización: ${error.message}`,
+        count: 0,
+      };
+    }
+  }
+
+  /**
+   * Busca ejercicios por nombre
+   */
+  async searchByName(name: string): Promise<ExerciseEntity[]> {
+    return this.exerciseRepository
+      .createQueryBuilder('exercise')
+      .where('LOWER(exercise.name) LIKE LOWER(:name)', { name: `%${name}%` })
+      .orderBy('exercise.name', 'ASC')
+      .getMany();
+  }
+
+  /**
+   * Mapea los datos de ExerciseDB v1 a la entidad local
+   */
+  private async mapToExerciseEntity(data: any): Promise<ExerciseEntity> {
+    const entity = new ExerciseEntity();
+
+    // Mapeo de campos según la estructura de ExerciseDB v1
+    entity.id = data.exerciseId || data.id;
+    entity.name = this.capitalizeFirst(data.name);
+    entity.giftUrl = data.gifUrl;
+    entity.targetMuscles = this.capitalizeArray(data.targetMuscles || []);
+    entity.bodyParts = this.capitalizeArray(data.bodyParts || []);
+    entity.equipments = this.capitalizeArray(data.equipments || []);
+    entity.secondaryMuscles = this.capitalizeArray(data.secondaryMuscles || []);
+    entity.instructions = data.instructions || [];
+
+    // Nuevos campos específicos de ExerciseDB v1
+    entity.exerciseType = data.exerciseType;
+    entity.videoUrl = data.videoUrl;
+    entity.keywords = data.keywords || [];
+    entity.overview = data.overview;
+    entity.exerciseTips = data.exerciseTips || [];
+    entity.variations = data.variations || [];
+    entity.relatedExerciseIds = data.relatedExerciseIds || [];
+
+    // Procesar imagen (GIF a PNG en base64)
+    if (data.gifUrl) {
+      try {
+        const imageBuffer = await this.downloadAndConvertImage(data.gifUrl);
+        entity.imageUrl = imageBuffer.toString('base64');
+      } catch (error) {
+        this.logger.warn(
+          `No se pudo procesar imagen para ${data.name}: ${error.message}`,
+        );
+        entity.imageUrl = undefined;
+      }
+    }
+
+    return entity;
+  }
+
+  /**
+   * Descarga y convierte la imagen GIF a PNG
+   */
+  private async downloadAndConvertImage(imageUrl: string): Promise<Buffer> {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(imageUrl, {
+          responseType: 'arraybuffer',
+          timeout: 10000,
+        }),
+      );
+
+      const pngBuffer = await sharp(response.data)
+        .png()
+        .resize(400, 400, {
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .toBuffer();
+
+      return pngBuffer;
+    } catch (error) {
+      throw new Error(`Error procesando imagen: ${error.message}`);
+    }
+  }
+
+  /**
+   * Método de importación desde JSON local (mantenido por compatibilidad)
+   */
   async importFromJson() {
+    // Tu implementación existente...
     const data = fs.readFileSync('assets/exercises.json', 'utf8');
     const items = JSON.parse(data);
 
@@ -79,7 +302,6 @@ export class ExercisesService {
         e.targetMuscles = this.capitalizeArray(item.targetMuscles);
         e.secondaryMuscles = this.capitalizeArray(item.secondaryMuscles);
         e.instructions = item.instructions;
-
         e.giftUrl = item.gifUrl;
 
         try {
@@ -98,46 +320,6 @@ export class ExercisesService {
 
     await this.exerciseRepository.save(entities, { chunk: 100 });
   }
-
-  /* async syncAll() {
-    const baseUrl = 'https://v2.exercisedb.dev/api/v1/exercises';
-    let cursor: string | undefined = undefined;
-    let hasNextPage = true;
-    const allItems: any[] = [];
-
-    while (hasNextPage) {
-      const url = cursor ? `${baseUrl}?cursor=${cursor}` : baseUrl;
-      const resp = await firstValueFrom(this.httpService.get(url));
-      const items = resp.data.data as any[];
-      allItems.push(...items);
-
-      hasNextPage = resp.data.meta.hasNextPage;
-      cursor = resp.data.meta.nextCursor;
-    }
-
-    const entities = allItems.map((item) => {
-      const e = new ExerciseEntity();
-      e.id = item.exerciseId;
-      e.name = item.name;
-      e.imageUrl = item.imageUrl;
-      e.equipments = item.equipments;
-      e.bodyParts = item.bodyParts;
-      e.exerciseType = item.exerciseType;
-      e.targetMuscles = item.targetMuscles;
-      e.secondaryMuscles = item.secondaryMuscles;
-      e.videoUrl = item.videoUrl;
-      e.keywords = item.keywords;
-      e.overview = item.overview;
-      e.instructions = item.instructions ?? [];
-      e.exerciseTips = item.exerciseTips;
-      e.variations = item.variations;
-      e.relatedExerciseIds = item.relatedExerciseIds;
-      return e;
-    });
-
-    await this.exerciseRepository.save(entities, { chunk: 100 });
-    return `Guardados ${entities.length} ejercicios`;
-  } */
 
   private capitalizeFirst(text: string): string {
     if (!text) return text;

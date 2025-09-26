@@ -1,5 +1,4 @@
 import { Column, Entity, OneToMany, PrimaryColumn } from 'typeorm';
-
 import { RoutineExerciseEntity } from './index';
 
 @Entity()
@@ -31,9 +30,31 @@ export class ExerciseEntity {
   @Column('simple-array')
   instructions: string[];
 
+  // Nuevos campos para compatibilidad con ExerciseDB v1
+  @Column({ nullable: true })
+  exerciseType?: string;
+
+  @Column({ nullable: true })
+  videoUrl?: string;
+
+  @Column('simple-array', { nullable: true })
+  keywords?: string[];
+
+  @Column('text', { nullable: true })
+  overview?: string;
+
+  @Column('simple-array', { nullable: true })
+  exerciseTips?: string[];
+
+  @Column('simple-array', { nullable: true })
+  variations?: string[];
+
+  @Column('simple-array', { nullable: true })
+  relatedExerciseIds?: string[];
+
   @OneToMany(
     () => RoutineExerciseEntity,
-    (routineExercise) => routineExercise.exercise,
+    routineExercise => routineExercise.exercise,
   )
   routineExercises!: RoutineExerciseEntity[];
 }

@@ -11,3 +11,17 @@ export interface ExerciseRequestDto {
   weightUnit: 'kg' | 'lbs';
   repsType: 'reps' | 'range';
 }
+
+export class ExerciseResponseDto {
+  id: string;
+  name: string;
+  gifUrl: string;
+  targetMuscles: string[];
+  bodyParts: string[];
+  equipments: string[];
+  secondaryMuscles: string[];
+  instructions: string[];
+  imageUrl?: string;
+  exerciseType?: string;
+  videoUrl?: string;
+}
