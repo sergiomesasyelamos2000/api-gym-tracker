@@ -1,9 +1,15 @@
-import { Column, Entity, OneToMany, PrimaryColumn } from 'typeorm';
+import {
+  Column,
+  Entity,
+  OneToMany,
+  PrimaryColumn,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 import { RoutineExerciseEntity } from './index';
 
 @Entity()
 export class ExerciseEntity {
-  @PrimaryColumn()
+  @PrimaryGeneratedColumn('uuid')
   id!: string;
 
   @Column()

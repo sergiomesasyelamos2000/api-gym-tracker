@@ -1,4 +1,11 @@
-import { ExerciseEntity, ExerciseRequestDto } from '@app/entity-data-models';
+import {
+  CreateExerciseDto,
+  EquipmentEntity,
+  ExerciseEntity,
+  ExerciseRequestDto,
+  ExerciseTypeEntity,
+  MuscleEntity,
+} from '@app/entity-data-models';
 import { HttpService } from '@nestjs/axios';
 import {
   Injectable,
@@ -7,10 +14,10 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import * as fs from 'fs';
-import { Repository } from 'typeorm';
 import axios from 'axios';
+import * as fs from 'fs';
 import { firstValueFrom } from 'rxjs';
+import { Repository } from 'typeorm';
 
 const sharp = require('sharp');
 
@@ -22,6 +29,12 @@ export class ExercisesService implements OnModuleInit {
   constructor(
     @InjectRepository(ExerciseEntity)
     public exerciseRepository: Repository<ExerciseEntity>,
+    @InjectRepository(EquipmentEntity)
+    public equipmentRepository: Repository<EquipmentEntity>,
+    @InjectRepository(MuscleEntity)
+    public muscleRepository: Repository<MuscleEntity>,
+    @InjectRepository(ExerciseTypeEntity)
+    public exerciseTypeRepository: Repository<ExerciseTypeEntity>,
     private readonly httpService: HttpService,
   ) {}
 
@@ -29,13 +42,35 @@ export class ExercisesService implements OnModuleInit {
     //await this.syncWithExerciseDB();
   }
 
-  async create(
-    exerciseRequestDto: ExerciseRequestDto,
-  ): Promise<ExerciseEntity> {
-    const newExercise = this.exerciseRepository.create(
-      exerciseRequestDto as Partial<ExerciseEntity>,
-    );
-    return await this.exerciseRepository.save(newExercise);
+  async findAllEquipment(): Promise<EquipmentEntity[]> {
+    return this.equipmentRepository.find();
+  }
+
+  async findAllMuscles(): Promise<MuscleEntity[]> {
+    return this.muscleRepository.find();
+  }
+
+  async findAllExerciseTypes(): Promise<ExerciseTypeEntity[]> {
+    return this.exerciseTypeRepository.find();
+  }
+
+  async createCustom(dto: CreateExerciseDto & { imageBase64?: string }) {
+    const { v4: uuidv4 } = await import('uuid'); // o usa crypto.randomUUID()
+
+    const exercise = this.exerciseRepository.create({
+      id: uuidv4(),
+      name: dto.name,
+      equipments: [dto.equipment],
+      targetMuscles: [dto.primaryMuscle],
+      secondaryMuscles: dto.otherMuscles || [],
+      exerciseType: dto.type,
+      instructions: [],
+      bodyParts: [],
+      giftUrl: undefined,
+      imageUrl: dto.imageBase64,
+    });
+
+    return this.exerciseRepository.save(exercise);
   }
 
   async findAll(): Promise<ExerciseEntity[]> {
@@ -221,10 +256,12 @@ export class ExercisesService implements OnModuleInit {
    * Mapea los datos de ExerciseDB v1 a la entidad local
    */
   private async mapToExerciseEntity(data: any): Promise<ExerciseEntity> {
+    const { v4: uuidv4 } = await import('uuid');
     const entity = new ExerciseEntity();
 
-    // Mapeo de campos según la estructura de ExerciseDB v1
-    entity.id = data.exerciseId || data.id;
+    // ✅ SIEMPRE generar un nuevo UUID, ignorar los IDs de ExerciseDB
+    entity.id = uuidv4();
+
     entity.name = this.capitalizeFirst(data.name);
     entity.giftUrl = data.gifUrl;
     entity.targetMuscles = this.capitalizeArray(data.targetMuscles || []);
@@ -233,7 +270,6 @@ export class ExercisesService implements OnModuleInit {
     entity.secondaryMuscles = this.capitalizeArray(data.secondaryMuscles || []);
     entity.instructions = data.instructions || [];
 
-    // Nuevos campos específicos de ExerciseDB v1
     entity.exerciseType = data.exerciseType;
     entity.videoUrl = data.videoUrl;
     entity.keywords = data.keywords || [];
@@ -242,7 +278,6 @@ export class ExercisesService implements OnModuleInit {
     entity.variations = data.variations || [];
     entity.relatedExerciseIds = data.relatedExerciseIds || [];
 
-    // Procesar imagen (GIF a PNG en base64)
     if (data.gifUrl) {
       try {
         const imageBuffer = await this.downloadAndConvertImage(data.gifUrl);

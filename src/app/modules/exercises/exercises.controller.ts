@@ -1,4 +1,4 @@
-import { ExerciseRequestDto } from '@app/entity-data-models';
+import { CreateExerciseDto, ExerciseRequestDto } from '@app/entity-data-models';
 import {
   Body,
   Controller,
@@ -16,8 +16,8 @@ export class ExercisesController {
   constructor(private readonly exercisesService: ExercisesService) {}
 
   @Post()
-  create(@Body() exerciseRequestDto: ExerciseRequestDto) {
-    return this.exercisesService.create(exerciseRequestDto);
+  async createCustom(@Body() dto: CreateExerciseDto) {
+    return this.exercisesService.createCustom(dto);
   }
 
   @Get()
@@ -48,9 +48,23 @@ export class ExercisesController {
     return this.exercisesService.remove(id);
   }
 
-  // Nuevo endpoint para sincronizar con ExerciseDB
   @Post('sync')
   syncWithExerciseDB() {
     return this.exercisesService.syncWithExerciseDB();
+  }
+
+  @Get('equipment/all')
+  getEquipment() {
+    return this.exercisesService.findAllEquipment();
+  }
+
+  @Get('muscles/all')
+  getMuscles() {
+    return this.exercisesService.findAllMuscles();
+  }
+
+  @Get('exercise-types/all')
+  getExerciseTypes() {
+    return this.exercisesService.findAllExerciseTypes();
   }
 }
