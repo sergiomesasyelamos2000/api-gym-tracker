@@ -55,17 +55,50 @@ export class ExercisesService implements OnModuleInit {
   }
 
   async createCustom(dto: CreateExerciseDto & { imageBase64?: string }) {
-    const { v4: uuidv4 } = await import('uuid'); // o usa crypto.randomUUID()
+    const { v4: uuidv4 } = await import('uuid');
 
+    // 1. Obtener nombres de Equipment
+    const equipment = await this.equipmentRepository.findOne({
+      where: { id: dto.equipment },
+    });
+    if (!equipment)
+      throw new NotFoundException(`Equipo no encontrado: ${dto.equipment}`);
+
+    // 2. Obtener nombre del músculo primario
+    const primaryMuscle = await this.muscleRepository.findOne({
+      where: { id: dto.primaryMuscle },
+    });
+    if (!primaryMuscle)
+      throw new NotFoundException(
+        `Músculo no encontrado: ${dto.primaryMuscle}`,
+      );
+
+    // 3. Obtener nombres de músculos secundarios
+    let secondaryMuscles: string[] = [];
+    if (dto.otherMuscles && dto.otherMuscles.length > 0) {
+      const found = await this.muscleRepository.findByIds(dto.otherMuscles);
+      secondaryMuscles = found.map(m => m.name);
+    }
+
+    // 4. Obtener tipo de ejercicio
+    const exerciseType = await this.exerciseTypeRepository.findOne({
+      where: { id: dto.type },
+    });
+    if (!exerciseType)
+      throw new NotFoundException(
+        `Tipo de ejercicio no encontrado: ${dto.type}`,
+      );
+
+    // 5. Crear entidad con nombres en lugar de IDs
     const exercise = this.exerciseRepository.create({
       id: uuidv4(),
       name: dto.name,
-      equipments: [dto.equipment],
-      targetMuscles: [dto.primaryMuscle],
-      secondaryMuscles: dto.otherMuscles || [],
-      exerciseType: dto.type,
+      equipments: [equipment.name],
+      targetMuscles: [primaryMuscle.name],
+      secondaryMuscles,
+      exerciseType: exerciseType.name,
+      bodyParts: [primaryMuscle.name], // 👈 si quieres que bodyParts coincida con los músculos
       instructions: [],
-      bodyParts: [],
       giftUrl: undefined,
       imageUrl: dto.imageBase64,
     });
