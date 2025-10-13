@@ -10,13 +10,12 @@ import {
   Get,
   HttpCode,
   Param,
-  Patch,
   Post,
   Put,
 } from '@nestjs/common';
-import { RoutineService } from './routine.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { RoutineService } from './routine.service';
 
 @Controller('routines')
 export class RoutineController {

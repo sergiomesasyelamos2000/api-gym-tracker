@@ -17,6 +17,13 @@ export class RoutineSessionEntity {
   })
   routine!: RoutineEntity;
 
+  @Column('jsonb', { nullable: true, default: [] })
+  exercises!: {
+    exerciseId: string;
+    name: string;
+    sets: { weight: number; reps: number; completed: boolean }[];
+  }[];
+
   @Column({ type: 'int' })
   totalTime!: number; // en segundos
 

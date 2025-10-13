@@ -281,47 +281,58 @@ export class RoutineService {
   ): Promise<RoutineSessionEntity> {
     const routine = await this.routineRepository.findOne({
       where: { id: dto.routineId },
+      relations: ['routineExercises', 'sessions'],
     });
-    if (!routine) {
-      throw new Error(`Routine with id ${dto.routineId} not found`);
-    }
+
+    if (!routine) throw new Error(`Routine with id ${dto.routineId} not found`);
+
+    // Mapear ejercicios con información completa incluyendo imágenes
+    const exercises = await Promise.all(
+      (dto.exercises ?? []).map(async ex => {
+        const exercise = await this.exerciseRepository.findOne({
+          where: { id: ex.exerciseId },
+          select: ['id', 'name', 'imageUrl', 'giftUrl'], // Incluir las URLs
+        });
+        if (!exercise)
+          throw new Error(`Exercise with id ${ex.exerciseId} not found`);
+
+        return {
+          exerciseId: exercise.id,
+          name: exercise.name,
+          imageUrl: exercise.imageUrl, // ✅ Incluir imageUrl
+          giftUrl: exercise.giftUrl, // ✅ Incluir giftUrl
+          sets: ex.sets,
+        };
+      }),
+    );
 
     const session = this.sessionRepository.create({
       routine,
+      exercises,
       totalTime: dto.totalTime,
       totalWeight: dto.totalWeight,
       completedSets: dto.completedSets,
     });
 
-    return await this.sessionRepository.save(session);
+    return this.sessionRepository.save(session);
   }
 
-  async getAllSessions() {
+  async getSessions(routineId: string) {
     return this.sessionRepository.find({
-      relations: [
-        'routine',
-        'routine.routineExercises',
-        'routine.routineExercises.exercise',
-        'routine.routineExercises.sets',
-      ],
-      order: { createdAt: 'DESC' },
-    });
-  }
-
-  async getSessions(routineId: string): Promise<RoutineSessionEntity[]> {
-    return await this.sessionRepository.find({
       where: { routine: { id: routineId } },
       order: { createdAt: 'DESC' },
     });
   }
 
-  async getGlobalStats(): Promise<{
-    totalTime: number;
-    totalWeight: number;
-    completedSets: number;
-  }> {
-    const sessions = await this.sessionRepository.find();
+  async getAllSessions() {
+    return this.sessionRepository.find({
+      relations: ['routine'],
+      order: { createdAt: 'DESC' },
+    });
+  }
 
+  async getGlobalStats() {
+    const sessions = await this.sessionRepository.find();
     return {
       totalTime: sessions.reduce((acc, s) => acc + s.totalTime, 0),
       totalWeight: sessions.reduce((acc, s) => acc + s.totalWeight, 0),
