@@ -2,15 +2,17 @@ import { SetRequestDto } from './set.model';
 
 export interface ExerciseRequestDto {
   id: string;
-  title: string;
+  name: string; // 🔥 Cambiado de 'title' a 'name'
   muscularGroup?: string;
-  photoUrl?: string;
+  imageUrl?: string; // 🔥 Cambiado de 'photoUrl' a 'imageUrl'
+  giftUrl?: string; // 🔥 NUEVO para GIFs
   notes?: string;
   restSeconds?: string;
   sets?: SetRequestDto[];
   weightUnit: 'kg' | 'lbs';
   repsType: 'reps' | 'range';
   order?: number;
+  supersetWith?: string; // 🔥 NUEVO para superseries
 }
 
 export class ExerciseResponseDto {
@@ -26,6 +28,7 @@ export class ExerciseResponseDto {
   exerciseType?: string;
   videoUrl?: string;
   order?: number;
+  supersetWith?: string; // 🔥 NUEVO
 }
 
 export class EquipmentDto {

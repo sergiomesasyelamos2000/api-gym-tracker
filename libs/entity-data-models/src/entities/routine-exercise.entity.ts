@@ -62,11 +62,17 @@ export class RoutineExerciseEntity {
   })
   repsType: 'reps' | 'range';
 
-  // 🔥 NUEVO: Campo para el orden
   @ApiProperty({
     example: 1,
     description: 'Orden del ejercicio en la rutina',
   })
   @Column({ type: 'int', default: 0 })
   order!: number;
+
+  @ApiProperty({
+    example: 'uuid-del-ejercicio-pareja',
+    description: 'ID del ejercicio con el que forma superserie',
+  })
+  @Column({ type: 'varchar', nullable: true, default: null })
+  supersetWith?: string | null;
 }

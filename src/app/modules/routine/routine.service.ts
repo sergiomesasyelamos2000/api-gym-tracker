@@ -37,10 +37,8 @@ export class RoutineService {
 
     const savedRoutine = await this.routineRepository.save(routine);
 
-    // Crear los ejercicios asociados CON ORDER
     const routineExercises = routineRequestDto.exercises.map(
       async (exerciseDto, index) => {
-        // 🔥 Agregamos el index
         const exercise = await this.exerciseRepository.findOne({
           where: { id: exerciseDto.id },
         });
@@ -55,8 +53,12 @@ export class RoutineService {
           restSeconds: exerciseDto.restSeconds,
           weightUnit: exerciseDto.weightUnit || 'kg',
           repsType: exerciseDto.repsType || 'reps',
-          order: exerciseDto.order || index + 1, // 🔥 NUEVO: Guardar el orden
+          order: exerciseDto.order || index + 1,
+          ...(exerciseDto.supersetWith && {
+            supersetWith: exerciseDto.supersetWith,
+          }), // 🔥 SOLUCIÓN
         });
+
         const savedRoutineExercise =
           await this.routineExerciseRepository.save(routineExercise);
 
@@ -91,7 +93,6 @@ export class RoutineService {
         'routineExercises.exercise',
         'routineExercises.sets',
       ],
-      // 🔥 NUEVO: Ordenar por el campo order
       order: {
         routineExercises: {
           order: 'ASC',
@@ -107,7 +108,6 @@ export class RoutineService {
 
     return fullRoutine;
   }
-
   async findOneWithExercises(id: string) {
     return await this.routineRepository.findOne({
       where: { id },
@@ -136,13 +136,10 @@ export class RoutineService {
     const routine = await this.routineRepository.findOne({ where: { id } });
     if (!routine) throw new Error(`Routine with id ${id} not found`);
 
-    // Elimina los ejercicios asociados (sets se borran en cascada)
     await this.routineExerciseRepository.delete({ routine: { id } });
 
-    // Crear los nuevos ejercicios CON ORDER
     const newRoutineExercises = routineRequestDto.exercises.map(
       async (exerciseDto, index) => {
-        // 🔥 Agregamos el index
         const exercise = await this.exerciseRepository.findOne({
           where: { id: exerciseDto.id },
         });
@@ -157,8 +154,12 @@ export class RoutineService {
           restSeconds: exerciseDto.restSeconds,
           weightUnit: exerciseDto.weightUnit || 'kg',
           repsType: exerciseDto.repsType || 'reps',
-          order: exerciseDto.order || index + 1, // 🔥 NUEVO: Guardar el orden
+          order: exerciseDto.order || index + 1,
+          ...(exerciseDto.supersetWith && {
+            supersetWith: exerciseDto.supersetWith,
+          }), // 🔥 SOLUCIÓN
         });
+
         const savedRoutineExercise =
           await this.routineExerciseRepository.save(routineExercise);
 
@@ -219,14 +220,17 @@ export class RoutineService {
     });
     const savedRoutine = await this.routineRepository.save(newRoutine);
 
-    const routineExercises = original.routineExercises.map(async (re: any) => {
+    // 🔥 SOLUCIÓN SIMPLIFICADA - Exactamente como en create y update
+    for (const re of original.routineExercises) {
       const exercise = await this.exerciseRepository.findOne({
         where: { id: re.exercise.id },
       });
+
       if (!exercise) {
         throw new Error(`Exercise with id ${re.exercise.id} not found`);
       }
 
+      // Crear routineExercise (igual que en create/update)
       const routineExercise = this.routineExerciseRepository.create({
         routine: savedRoutine,
         exercise,
@@ -234,31 +238,50 @@ export class RoutineService {
         restSeconds: re.restSeconds,
         weightUnit: re.weightUnit || 'kg',
         repsType: re.repsType || 'reps',
-        order: re.order || 0, // 🔥 NUEVO: Copiar el orden
+        order: re.order || 0,
+        ...(re.supersetWith && { supersetWith: re.supersetWith }),
       });
+
       const savedRoutineExercise =
         await this.routineExerciseRepository.save(routineExercise);
 
+      // Crear sets (igual que en create/update)
       if (re.sets && re.sets.length > 0) {
-        const sets = re.sets.map((set: any) =>
-          this.setRepository.create({
+        const sets = re.sets.map((set: any) => {
+          // 🔥 Crear el objeto set igual que en create/update
+          return this.setRepository.create({
             order: set.order,
             weight: set.weight,
             reps: set.reps,
             repsMin: set.repsMin,
             repsMax: set.repsMax,
             completed: false,
-            routineExercise: savedRoutineExercise,
-          }),
-        );
+            weightUnit: set.weightUnit || 'kg',
+            repsType: set.repsType || 'reps',
+            routineExercise: savedRoutineExercise, // Esta es la entidad guardada
+          });
+        });
+
         await this.setRepository.save(sets);
       }
+    }
 
-      return savedRoutineExercise;
+    // Retornar rutina completa
+    const fullRoutine = await this.routineRepository.findOne({
+      where: { id: savedRoutine.id },
+      relations: [
+        'routineExercises',
+        'routineExercises.exercise',
+        'routineExercises.sets',
+      ],
+      order: {
+        routineExercises: {
+          order: 'ASC',
+        },
+      },
     });
 
-    await Promise.all(routineExercises);
-    return savedRoutine;
+    return fullRoutine || savedRoutine;
   }
 
   async findOne(id: string): Promise<RoutineEntity> {
