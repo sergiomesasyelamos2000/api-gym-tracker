@@ -37,9 +37,10 @@ export class RoutineService {
 
     const savedRoutine = await this.routineRepository.save(routine);
 
-    // Crear los ejercicios asociados
+    // Crear los ejercicios asociados CON ORDER
     const routineExercises = routineRequestDto.exercises.map(
-      async exerciseDto => {
+      async (exerciseDto, index) => {
+        // 🔥 Agregamos el index
         const exercise = await this.exerciseRepository.findOne({
           where: { id: exerciseDto.id },
         });
@@ -54,6 +55,7 @@ export class RoutineService {
           restSeconds: exerciseDto.restSeconds,
           weightUnit: exerciseDto.weightUnit || 'kg',
           repsType: exerciseDto.repsType || 'reps',
+          order: exerciseDto.order || index + 1, // 🔥 NUEVO: Guardar el orden
         });
         const savedRoutineExercise =
           await this.routineExerciseRepository.save(routineExercise);
@@ -73,8 +75,6 @@ export class RoutineService {
             }),
           );
 
-          console.log('Saving sets:', sets);
-
           await this.setRepository.save(sets);
         }
 
@@ -84,7 +84,6 @@ export class RoutineService {
 
     await Promise.all(routineExercises);
 
-    // 👇 Forzamos a que devuelva siempre una rutina, no null
     const fullRoutine = await this.routineRepository.findOne({
       where: { id: savedRoutine.id },
       relations: [
@@ -92,9 +91,13 @@ export class RoutineService {
         'routineExercises.exercise',
         'routineExercises.sets',
       ],
+      // 🔥 NUEVO: Ordenar por el campo order
+      order: {
+        routineExercises: {
+          order: 'ASC',
+        },
+      },
     });
-
-    console.log('Created routine:', fullRoutine);
 
     if (!fullRoutine) {
       throw new Error(
@@ -105,17 +108,6 @@ export class RoutineService {
     return fullRoutine;
   }
 
-  async findOne(id: string): Promise<RoutineEntity> {
-    const routine = await this.routineRepository.findOne({
-      where: { id },
-      relations: ['exercises'],
-    });
-    if (!routine) {
-      throw new Error(`Routine with id ${id} not found`);
-    }
-    return routine;
-  }
-
   async findOneWithExercises(id: string) {
     return await this.routineRepository.findOne({
       where: { id },
@@ -124,12 +116,12 @@ export class RoutineService {
         'routineExercises.exercise',
         'routineExercises.sets',
       ],
-    });
-  }
-
-  async findAll(): Promise<RoutineEntity[]> {
-    return this.routineRepository.find({
-      order: { createdAt: 'DESC' },
+      // 🔥 NUEVO: Ordenar por el campo order
+      order: {
+        routineExercises: {
+          order: 'ASC',
+        },
+      },
     });
   }
 
@@ -147,9 +139,10 @@ export class RoutineService {
     // Elimina los ejercicios asociados (sets se borran en cascada)
     await this.routineExerciseRepository.delete({ routine: { id } });
 
-    // Crear los nuevos ejercicios
+    // Crear los nuevos ejercicios CON ORDER
     const newRoutineExercises = routineRequestDto.exercises.map(
-      async exerciseDto => {
+      async (exerciseDto, index) => {
+        // 🔥 Agregamos el index
         const exercise = await this.exerciseRepository.findOne({
           where: { id: exerciseDto.id },
         });
@@ -157,7 +150,6 @@ export class RoutineService {
           throw new Error(`Exercise with id ${exerciseDto.id} not found`);
         }
 
-        // 1. Guardar routineExercise sin sets
         const routineExercise = this.routineExerciseRepository.create({
           routine,
           exercise,
@@ -165,11 +157,11 @@ export class RoutineService {
           restSeconds: exerciseDto.restSeconds,
           weightUnit: exerciseDto.weightUnit || 'kg',
           repsType: exerciseDto.repsType || 'reps',
+          order: exerciseDto.order || index + 1, // 🔥 NUEVO: Guardar el orden
         });
         const savedRoutineExercise =
           await this.routineExerciseRepository.save(routineExercise);
 
-        // 2. Guardar sets asociados
         if (exerciseDto.sets && exerciseDto.sets.length > 0) {
           const sets = exerciseDto.sets.map(set =>
             this.setRepository.create({
@@ -185,8 +177,6 @@ export class RoutineService {
             }),
           );
 
-          console.log('Saving sets:', sets);
-
           await this.setRepository.save(sets);
         }
 
@@ -201,10 +191,6 @@ export class RoutineService {
       throw new Error(`Routine with id ${id} not found`);
     }
     return updatedRoutine;
-  }
-
-  async remove(id: string): Promise<void> {
-    await this.routineRepository.delete(id);
   }
 
   async duplicate(id: string): Promise<RoutineEntity> {
@@ -241,7 +227,6 @@ export class RoutineService {
         throw new Error(`Exercise with id ${re.exercise.id} not found`);
       }
 
-      // 1. Guardar routineExercise sin sets
       const routineExercise = this.routineExerciseRepository.create({
         routine: savedRoutine,
         exercise,
@@ -249,11 +234,11 @@ export class RoutineService {
         restSeconds: re.restSeconds,
         weightUnit: re.weightUnit || 'kg',
         repsType: re.repsType || 'reps',
+        order: re.order || 0, // 🔥 NUEVO: Copiar el orden
       });
       const savedRoutineExercise =
         await this.routineExerciseRepository.save(routineExercise);
 
-      // 2. Guardar sets asociados
       if (re.sets && re.sets.length > 0) {
         const sets = re.sets.map((set: any) =>
           this.setRepository.create({
@@ -274,6 +259,27 @@ export class RoutineService {
 
     await Promise.all(routineExercises);
     return savedRoutine;
+  }
+
+  async findOne(id: string): Promise<RoutineEntity> {
+    const routine = await this.routineRepository.findOne({
+      where: { id },
+      relations: ['exercises'],
+    });
+    if (!routine) {
+      throw new Error(`Routine with id ${id} not found`);
+    }
+    return routine;
+  }
+
+  async findAll(): Promise<RoutineEntity[]> {
+    return this.routineRepository.find({
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async remove(id: string): Promise<void> {
+    await this.routineRepository.delete(id);
   }
 
   async addSession(

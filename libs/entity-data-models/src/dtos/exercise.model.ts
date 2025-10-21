@@ -10,6 +10,7 @@ export interface ExerciseRequestDto {
   sets?: SetRequestDto[];
   weightUnit: 'kg' | 'lbs';
   repsType: 'reps' | 'range';
+  order?: number;
 }
 
 export class ExerciseResponseDto {
@@ -24,6 +25,7 @@ export class ExerciseResponseDto {
   imageUrl?: string;
   exerciseType?: string;
   videoUrl?: string;
+  order?: number;
 }
 
 export class EquipmentDto {

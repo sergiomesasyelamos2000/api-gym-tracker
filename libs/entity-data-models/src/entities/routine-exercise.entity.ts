@@ -15,19 +15,19 @@ export class RoutineExerciseEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @ManyToOne(() => ExerciseEntity, (exercise) => exercise.routineExercises, {
+  @ManyToOne(() => ExerciseEntity, exercise => exercise.routineExercises, {
     eager: true,
   })
   exercise!: ExerciseEntity;
 
-  @ManyToOne(() => RoutineEntity, (routine) => routine.routineExercises, {
+  @ManyToOne(() => RoutineEntity, routine => routine.routineExercises, {
     eager: true,
     onDelete: 'CASCADE',
   })
   routine!: RoutineEntity;
 
   @ApiProperty({ type: () => SetEntity, isArray: true })
-  @OneToMany(() => SetEntity, (set) => set.routineExercise, {
+  @OneToMany(() => SetEntity, set => set.routineExercise, {
     cascade: true,
     onDelete: 'CASCADE',
   })
@@ -61,4 +61,12 @@ export class RoutineExerciseEntity {
     default: 'reps',
   })
   repsType: 'reps' | 'range';
+
+  // 🔥 NUEVO: Campo para el orden
+  @ApiProperty({
+    example: 1,
+    description: 'Orden del ejercicio en la rutina',
+  })
+  @Column({ type: 'int', default: 0 })
+  order!: number;
 }
