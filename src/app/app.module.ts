@@ -21,9 +21,13 @@ import { DataSeedService } from './services/equipment-seed.service';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { PopulateModule } from './services/populate.module';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true, // así puedes usarlo en toda la app sin importarlo en cada módulo
+    }),
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'public'),
       serveRoot: '/public',

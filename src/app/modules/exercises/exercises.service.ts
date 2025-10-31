@@ -18,13 +18,30 @@ import axios from 'axios';
 import * as fs from 'fs';
 import { firstValueFrom } from 'rxjs';
 import { Repository } from 'typeorm';
+import { v2 as translate } from '@google-cloud/translate';
 
 const sharp = require('sharp');
 
 @Injectable()
 export class ExercisesService implements OnModuleInit {
   private readonly logger = new Logger(ExercisesService.name);
-  private readonly baseUrl = 'https://v1.exercisedb.dev/api/v1';
+  private readonly translator: translate.Translate;
+
+  // Diccionario de traducciones personalizadas para palabras específicas
+  private readonly customTranslations: { [key: string]: string } = {
+    back: 'Espalda',
+    neck: 'Cuello',
+    shoulders: 'Hombros',
+    chest: 'Pecho',
+    waist: 'Cintura',
+    'upper back': 'Espalda alta',
+    'lower back': 'Espalda baja',
+    'upper arms': 'Brazos superiores',
+    'lower arms': 'Brazos inferiores',
+    'upper legs': 'Piernas superiores',
+    'lower legs': 'Piernas inferiores',
+    cardio: 'Cardio',
+  };
 
   constructor(
     @InjectRepository(ExerciseEntity)
@@ -36,10 +53,88 @@ export class ExercisesService implements OnModuleInit {
     @InjectRepository(ExerciseTypeEntity)
     public exerciseTypeRepository: Repository<ExerciseTypeEntity>,
     private readonly httpService: HttpService,
-  ) {}
+  ) {
+    // Inicializa el traductor de Google Cloud
+    this.translator = new translate.Translate({
+      projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
+      keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    });
+  }
 
   async onModuleInit() {
     //await this.syncWithExerciseDB();
+  }
+
+  /**
+   * Capitaliza la primera letra de un texto
+   */
+  private capitalizeFirst(text: string): string {
+    if (!text) return text;
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  /**
+   * Traduce un texto de inglés a español
+   */
+  private async translateToSpanish(text: string): Promise<string> {
+    if (!text) return text;
+
+    try {
+      // Verificar si existe una traducción personalizada
+      const lowerText = text.toLowerCase().trim();
+      if (this.customTranslations[lowerText]) {
+        return this.customTranslations[lowerText];
+      }
+
+      // Si no, usar Google Translate
+      const [translation] = await this.translator.translate(text, {
+        from: 'en',
+        to: 'es',
+      });
+
+      // Capitalizar la primera letra del resultado
+      return this.capitalizeFirst(translation);
+    } catch (error) {
+      this.logger.warn(`Error traduciendo "${text}": ${error.message}`);
+      return this.capitalizeFirst(text); // Devolver el texto original capitalizado si falla
+    }
+  }
+
+  /**
+   * Traduce un array de textos
+   */
+  private async translateArray(texts: string[]): Promise<string[]> {
+    if (!texts || texts.length === 0) return texts;
+
+    try {
+      // Procesar cada texto individualmente para usar traducciones personalizadas
+      const translations = await Promise.all(
+        texts.map(async text => {
+          const lowerText = text.toLowerCase().trim();
+
+          // Verificar si existe una traducción personalizada
+          if (this.customTranslations[lowerText]) {
+            return this.customTranslations[lowerText];
+          }
+
+          // Si no, usar Google Translate
+          try {
+            const [translation] = await this.translator.translate(text, {
+              from: 'en',
+              to: 'es',
+            });
+            return this.capitalizeFirst(translation);
+          } catch (error) {
+            return this.capitalizeFirst(text);
+          }
+        }),
+      );
+
+      return translations;
+    } catch (error) {
+      this.logger.warn(`Error traduciendo array: ${error.message}`);
+      return texts.map(t => this.capitalizeFirst(t));
+    }
   }
 
   async findAllEquipment(): Promise<EquipmentEntity[]> {
@@ -97,7 +192,7 @@ export class ExercisesService implements OnModuleInit {
       targetMuscles: [primaryMuscle.name],
       secondaryMuscles,
       exerciseType: exerciseType.name,
-      bodyParts: [primaryMuscle.name], // 👈 si quieres que bodyParts coincida con los músculos
+      bodyParts: [primaryMuscle.name],
       instructions: [],
       giftUrl: undefined,
       imageUrl: dto.imageBase64,
@@ -138,95 +233,131 @@ export class ExercisesService implements OnModuleInit {
   }
 
   /**
-   * Sincroniza con ExerciseDB v1 (gratuito, sin API key requerida)
+   * 🎉 Sincroniza con ExerciseDB usando la API oficial GRATUITA
+   *
+   * ✅ Ventajas:
+   * - Completamente gratuita
+   * - No requiere API Key
+   * - Más de 1300 ejercicios con imágenes, GIFs y videos
+   * - Sin límites de requests
+   *
+   * 📚 Documentación: https://www.exercisedb.dev/docs
+   * 🔗 Endpoint: https://www.exercisedb.dev/api/v1/exercises
    */
-  // exercises.service.ts - Método syncWithExerciseDB corregido
   async syncWithExerciseDB(): Promise<{ message: string; count: number }> {
     try {
-      this.logger.log('Iniciando sincronización con ExerciseDB v1...');
+      this.logger.log(
+        '🚀 Iniciando sincronización con ExerciseDB (API oficial gratuita)...',
+      );
 
+      const baseUrl = 'https://www.exercisedb.dev/api/v1/exercises';
+
+      this.logger.log('📡 Obteniendo ejercicios desde ExerciseDB...');
+
+      // 🔄 Implementar paginación para obtener TODOS los ejercicios
       let allExercises: any[] = [];
-      let currentPage = 1;
-      let hasMorePages = true;
-      const limit = 100; // Máximo permitido por la API
+      let offset = 0;
+      const limit = 100; // Cantidad por página
+      let hasMore = true;
 
-      // Obtener todas las páginas mediante paginación
-      while (hasMorePages) {
-        this.logger.log(`Obteniendo página ${currentPage}...`);
-
-        const url = `${this.baseUrl}/exercises?offset=${(currentPage - 1) * limit}&limit=${limit}`;
+      while (hasMore) {
+        this.logger.log(
+          `📄 Página ${Math.floor(offset / limit) + 1}: Obteniendo ejercicios ${offset} - ${offset + limit}...`,
+        );
 
         const response = await firstValueFrom(
-          this.httpService.get(url, {
-            headers: {
-              'User-Agent': 'GymTrackerApp/1.0',
+          this.httpService.get(baseUrl, {
+            params: {
+              limit: limit,
+              offset: offset,
             },
+            timeout: 120000, // 120 segundos
           }),
         );
 
         if (response.status !== 200) {
-          throw new Error(
-            `Error HTTP ${response.status} al obtener página ${currentPage}`,
-          );
+          throw new Error(`Error HTTP ${response.status}`);
         }
 
+        // La API puede devolver diferentes estructuras de respuesta
         const responseData = response.data;
 
-        // Verificar la estructura de la respuesta
-        if (!responseData.success) {
-          throw new Error(
-            `API returned success: false for page ${currentPage}`,
+        // Log para debug: ver la estructura de la respuesta
+        if (offset === 0) {
+          this.logger.log(
+            `📊 Estructura de respuesta: ${JSON.stringify(Object.keys(responseData)).substring(0, 200)}`,
           );
         }
 
-        if (!responseData.data || !Array.isArray(responseData.data)) {
+        // Intentar extraer el array de ejercicios de diferentes formas
+        let batchData: any[];
+
+        if (Array.isArray(responseData)) {
+          // Si response.data ya es un array
+          batchData = responseData;
+        } else if (responseData.data && Array.isArray(responseData.data)) {
+          // Si tiene una propiedad 'data' que es un array
+          batchData = responseData.data;
+        } else if (
+          responseData.exercises &&
+          Array.isArray(responseData.exercises)
+        ) {
+          // Si tiene una propiedad 'exercises' que es un array
+          batchData = responseData.exercises;
+        } else {
           this.logger.error(
-            `Estructura inesperada en página ${currentPage}:`,
-            responseData,
+            'No se encontró array de ejercicios en la respuesta. Claves disponibles:',
+            Object.keys(responseData),
+          );
+          this.logger.error(
+            'Muestra de la respuesta:',
+            JSON.stringify(responseData).substring(0, 500),
           );
           throw new Error(
-            `Estructura de datos inesperada en página ${currentPage}`,
+            'La respuesta de ExerciseDB no contiene un array de ejercicios en el formato esperado',
           );
         }
 
-        // Agregar los ejercicios de esta página
-        allExercises = [...allExercises, ...responseData.data];
+        // Si no hay datos, terminamos
+        if (batchData.length === 0) {
+          this.logger.log('✅ No hay más ejercicios disponibles');
+          hasMore = false;
+          break;
+        }
+
+        allExercises.push(...batchData);
+
         this.logger.log(
-          `Página ${currentPage}: obtenidos ${responseData.data.length} ejercicios. Total acumulado: ${allExercises.length}`,
+          `✅ Obtenidos ${batchData.length} ejercicios. Total acumulado: ${allExercises.length}`,
         );
 
-        // Verificar si hay más páginas
-        if (responseData.metadata && responseData.metadata.nextPage) {
-          currentPage++;
-
-          // Opcional: pequeño delay para no saturar la API
-          await new Promise(resolve => setTimeout(resolve, 100));
+        // Si obtuvimos menos ejercicios que el límite, ya no hay más
+        if (batchData.length < limit) {
+          this.logger.log('✅ Última página alcanzada');
+          hasMore = false;
         } else {
-          hasMorePages = false;
-          this.logger.log(
-            `No hay más páginas. Total de ejercicios obtenidos: ${allExercises.length}`,
-          );
-        }
-
-        // Safety check: evitar bucles infinitos
-        if (currentPage > 50) {
-          // Máximo 50 páginas como seguridad
-          this.logger.warn('Se alcanzó el límite de seguridad de 50 páginas');
-          hasMorePages = false;
+          offset += limit;
+          // Pequeña pausa para no saturar la API (ser amables)
+          await new Promise(resolve => setTimeout(resolve, 300));
         }
       }
 
+      this.logger.log(
+        `📊 Total de ejercicios obtenidos: ${allExercises.length}`,
+      );
+
       if (allExercises.length === 0) {
-        this.logger.warn('No se obtuvieron ejercicios de ExerciseDB');
+        this.logger.warn('⚠️  No se obtuvieron ejercicios de ExerciseDB');
         return {
           message: 'No se obtuvieron ejercicios de ExerciseDB',
           count: 0,
         };
       }
 
-      this.logger.log(`Procesando ${allExercises.length} ejercicios...`);
+      this.logger.log(
+        `🌍 Procesando y traduciendo ${allExercises.length} ejercicios...`,
+      );
 
-      // Procesar en lotes para mejor performance
       const batchSize = 50;
       const entities: ExerciseEntity[] = [];
 
@@ -243,18 +374,20 @@ export class ExercisesService implements OnModuleInit {
 
         const progress = Math.min(i + batchSize, allExercises.length);
         this.logger.log(
-          `Procesado lote ${Math.floor(i / batchSize) + 1}: ${progress}/${allExercises.length} ejercicios`,
+          `🔄 Procesado lote ${Math.floor(i / batchSize) + 1}: ${progress}/${allExercises.length} ejercicios`,
         );
       }
 
-      // Limpiar la tabla antes de insertar nuevos datos (opcional)
+      // Limpiar la base de datos antes de insertar los nuevos ejercicios
+      this.logger.log('🗑️  Limpiando ejercicios anteriores...');
       await this.exerciseRepository.createQueryBuilder().delete().execute();
 
-      // Guardar todos los ejercicios
+      // Guardar los nuevos ejercicios en lotes
+      this.logger.log('💾 Guardando ejercicios en la base de datos...');
       await this.exerciseRepository.save(entities, { chunk: 100 });
 
       this.logger.log(
-        `Sincronización completada: ${entities.length} ejercicios guardados en la base de datos`,
+        `✅ ¡Sincronización completada! ${entities.length} ejercicios guardados en la base de datos`,
       );
 
       return {
@@ -263,7 +396,7 @@ export class ExercisesService implements OnModuleInit {
       };
     } catch (error) {
       this.logger.error(
-        `Error en sincronización: ${error.message}`,
+        `❌ Error en sincronización: ${error.message}`,
         error.stack,
       );
 
@@ -286,7 +419,24 @@ export class ExercisesService implements OnModuleInit {
   }
 
   /**
-   * Mapea los datos de ExerciseDB v1 a la entidad local
+   * Mapea los datos de ExerciseDB v1 (API oficial gratuita) a la entidad local con traducción
+   *
+   * Estructura de datos de la API:
+   * {
+   *   "exerciseId": "K6NnTv0",
+   *   "name": "Bench Press",
+   *   "imageUrl": "Barbell-Bench-Press_Chest.png",
+   *   "gifUrl": "https://...",
+   *   "equipments": ["Barbell"],
+   *   "bodyParts": ["Chest"],
+   *   "exerciseType": "weight_reps",
+   *   "targetMuscles": ["Pectoralis Major Clavicular Head"],
+   *   "secondaryMuscles": ["Deltoid Anterior", ...],
+   *   "videoUrl": "Barbell-Bench-Press_Chest_.mp4",
+   *   "keywords": [...],
+   *   "overview": "The Bench Press is a classic...",
+   *   "instructions": [...]
+   * }
    */
   private async mapToExerciseEntity(data: any): Promise<ExerciseEntity> {
     const { v4: uuidv4 } = await import('uuid');
@@ -295,29 +445,89 @@ export class ExercisesService implements OnModuleInit {
     // ✅ SIEMPRE generar un nuevo UUID, ignorar los IDs de ExerciseDB
     entity.id = uuidv4();
 
-    entity.name = this.capitalizeFirst(data.name);
-    entity.giftUrl = data.gifUrl;
-    entity.targetMuscles = this.capitalizeArray(data.targetMuscles || []);
-    entity.bodyParts = this.capitalizeArray(data.bodyParts || []);
-    entity.equipments = this.capitalizeArray(data.equipments || []);
-    entity.secondaryMuscles = this.capitalizeArray(data.secondaryMuscles || []);
-    entity.instructions = data.instructions || [];
+    // 🌍 TRADUCIR los campos importantes
+    entity.name = await this.translateToSpanish(data.name);
 
-    entity.exerciseType = data.exerciseType;
+    // 📹 GIF URL - La API gratuita devuelve gifUrl directamente
+    if (data.gifUrl) {
+      entity.giftUrl = data.gifUrl;
+    }
+
+    // 🎥 Video URL
     entity.videoUrl = data.videoUrl;
-    entity.keywords = data.keywords || [];
-    entity.overview = data.overview;
-    entity.exerciseTips = data.exerciseTips || [];
-    entity.variations = data.variations || [];
+
+    // Traducir arrays
+    entity.targetMuscles = await this.translateArray(data.targetMuscles || []);
+    entity.bodyParts = await this.translateArray(data.bodyParts || []);
+    entity.equipments = await this.translateArray(data.equipments || []);
+    entity.secondaryMuscles = await this.translateArray(
+      data.secondaryMuscles || [],
+    );
+    entity.instructions = await this.translateArray(data.instructions || []);
+
+    // Traducir tipo de ejercicio
+    if (data.exerciseType) {
+      entity.exerciseType = await this.translateToSpanish(data.exerciseType);
+    }
+
+    // Traducir arrays opcionales
+    entity.keywords = await this.translateArray(data.keywords || []);
+    entity.exerciseTips = await this.translateArray(data.exerciseTips || []);
+    entity.variations = await this.translateArray(data.variations || []);
+
+    // Traducir overview si existe
+    if (data.overview) {
+      entity.overview = await this.translateToSpanish(data.overview);
+    }
+
     entity.relatedExerciseIds = data.relatedExerciseIds || [];
 
-    if (data.gifUrl) {
+    // 🖼️ Procesar imagen - La API incluye imageUrl directamente
+    if (data.imageUrl) {
       try {
-        const imageBuffer = await this.downloadAndConvertImage(data.gifUrl);
+        // La imageUrl puede ser una URL completa o relativa
+        let fullImageUrl = data.imageUrl;
+
+        // Si es una URL relativa, construir la URL completa
+        if (!fullImageUrl.startsWith('http')) {
+          fullImageUrl = `https://static.exercisedb.dev/images/${fullImageUrl}`;
+        }
+
+        this.logger.debug(`Descargando imagen: ${fullImageUrl}`);
+
+        const imageBuffer = await this.downloadAndConvertImage(fullImageUrl);
         entity.imageUrl = imageBuffer.toString('base64');
       } catch (error) {
         this.logger.warn(
           `No se pudo procesar imagen para ${data.name}: ${error.message}`,
+        );
+
+        // Si falla la imagen, intentar usar el GIF como backup
+        if (data.gifUrl) {
+          try {
+            const gifBuffer = await this.downloadAndConvertImage(data.gifUrl);
+            entity.imageUrl = gifBuffer.toString('base64');
+            this.logger.debug(
+              `Usando GIF como imagen de respaldo para ${data.name}`,
+            );
+          } catch (gifError) {
+            this.logger.warn(
+              `Tampoco se pudo usar el GIF: ${gifError.message}`,
+            );
+            entity.imageUrl = undefined;
+          }
+        } else {
+          entity.imageUrl = undefined;
+        }
+      }
+    } else if (data.gifUrl) {
+      // Si no hay imageUrl, usar el GIF directamente
+      try {
+        const gifBuffer = await this.downloadAndConvertImage(data.gifUrl);
+        entity.imageUrl = gifBuffer.toString('base64');
+      } catch (error) {
+        this.logger.warn(
+          `No se pudo procesar GIF para ${data.name}: ${error.message}`,
         );
         entity.imageUrl = undefined;
       }
@@ -327,7 +537,7 @@ export class ExercisesService implements OnModuleInit {
   }
 
   /**
-   * Descarga y convierte la imagen GIF a PNG
+   * Descarga y convierte la imagen/GIF a PNG
    */
   private async downloadAndConvertImage(imageUrl: string): Promise<Buffer> {
     try {
@@ -356,7 +566,6 @@ export class ExercisesService implements OnModuleInit {
    * Método de importación desde JSON local (mantenido por compatibilidad)
    */
   async importFromJson() {
-    // Tu implementación existente...
     const data = fs.readFileSync('assets/exercises.json', 'utf8');
     const items = JSON.parse(data);
 
@@ -389,13 +598,8 @@ export class ExercisesService implements OnModuleInit {
     await this.exerciseRepository.save(entities, { chunk: 100 });
   }
 
-  private capitalizeFirst(text: string): string {
-    if (!text) return text;
-    return text.charAt(0).toUpperCase() + text.slice(1);
-  }
-
   private capitalizeArray(arr: string[]): string[] {
     if (!Array.isArray(arr)) return arr;
-    return arr.map(this.capitalizeFirst);
+    return arr.map(t => this.capitalizeFirst(t));
   }
 }
