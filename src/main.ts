@@ -14,7 +14,13 @@ async function bootstrap() {
   app.use(urlencoded({ extended: true, limit: '10mb' }));
 
   app.enableCors({
-    origin: true, // Permitir todos los orígenes
+    origin: [
+      'http://localhost:8081',
+      'exp://localhost:8081',
+      'http://localhost:19000',
+      'http://localhost:19001',
+      'http://localhost:19002',
+    ], // Permitir todos los orígenes
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     allowedHeaders: 'Content-Type, Authorization, ngrok-skip-browser-warning',
     credentials: true,

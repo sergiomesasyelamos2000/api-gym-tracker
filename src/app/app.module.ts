@@ -8,20 +8,22 @@ import {
   RoutineExerciseEntity,
   RoutineSessionEntity,
   SetEntity,
+  UserEntity,
 } from '@app/entity-data-models';
 import { Module, OnApplicationBootstrap } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
+import { ServeStaticModule } from '@nestjs/serve-static';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { join } from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AuthModule } from './modules/auth/auth.module';
 import { ExercisesModule } from './modules/exercises/exercises.module';
-import { RoutineModule } from './modules/routine/routine.module';
 import { NutritionModule } from './modules/nutrition/nutrition.module';
-import { ScheduleModule } from '@nestjs/schedule';
+import { RoutineModule } from './modules/routine/routine.module';
 import { DataSeedService } from './services/equipment-seed.service';
-import { ServeStaticModule } from '@nestjs/serve-static';
-import { join } from 'path';
 import { PopulateModule } from './services/populate.module';
-import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
@@ -48,6 +50,7 @@ import { ConfigModule } from '@nestjs/config';
         EquipmentEntity,
         MuscleEntity,
         ExerciseTypeEntity,
+        UserEntity,
       ],
       synchronize: true,
     }),
@@ -56,6 +59,7 @@ import { ConfigModule } from '@nestjs/config';
     RoutineModule,
     NutritionModule,
     PopulateModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
