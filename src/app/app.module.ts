@@ -3,11 +3,13 @@ import {
   EquipmentEntity,
   ExerciseEntity,
   ExerciseTypeEntity,
+  FoodEntryEntity,
   MuscleEntity,
   RoutineEntity,
   RoutineExerciseEntity,
   RoutineSessionEntity,
   SetEntity,
+  UserNutritionProfileEntity,
 } from '@app/entity-data-models';
 import { Module, OnApplicationBootstrap } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -48,6 +50,8 @@ import { ConfigModule } from '@nestjs/config';
         EquipmentEntity,
         MuscleEntity,
         ExerciseTypeEntity,
+        UserNutritionProfileEntity,
+        FoodEntryEntity,
       ],
       synchronize: true,
     }),

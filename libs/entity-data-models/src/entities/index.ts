@@ -6,3 +6,5 @@ export * from './routine-session.entity';
 export * from './equipment.entity';
 export * from './muscle.entity';
 export * from './exercise-type.entity';
+export * from './user-nutrition-profile.entity';
+export * from './food-entry.entity';

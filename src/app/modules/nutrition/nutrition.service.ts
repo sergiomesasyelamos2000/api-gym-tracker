@@ -1,9 +1,23 @@
 import { GoogleGenAI } from '@google/genai';
 import { HttpService } from '@nestjs/axios';
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Between } from 'typeorm';
 import { lastValueFrom } from 'rxjs';
 import { ENV } from '../../../environments/environment';
 import NUTRIENT_LABELS_ES from '../../utils/nutrients-labels';
+import {
+  UserNutritionProfileEntity,
+  FoodEntryEntity,
+  CreateUserNutritionProfileDto,
+  UpdateUserNutritionProfileDto,
+  UpdateMacroGoalsDto,
+  CreateFoodEntryDto,
+  UpdateFoodEntryDto,
+  UserNutritionProfileResponseDto,
+  FoodEntryResponseDto,
+  DailyNutritionSummaryDto,
+} from '@app/entity-data-models';
 
 @Injectable()
 export class NutritionService {
@@ -11,7 +25,13 @@ export class NutritionService {
     apiKey: ENV.AIMLAPI_KEY,
   });
 
-  constructor(private readonly httpService: HttpService) {}
+  constructor(
+    private readonly httpService: HttpService,
+    @InjectRepository(UserNutritionProfileEntity)
+    private readonly userProfileRepo: Repository<UserNutritionProfileEntity>,
+    @InjectRepository(FoodEntryEntity)
+    private readonly foodEntryRepo: Repository<FoodEntryEntity>,
+  ) {}
 
   // CHATBOT
 
@@ -626,7 +646,7 @@ export class NutritionService {
                 'proteins',
                 'fat',
                 'nova',
-              ].some((main) => key.startsWith(main)),
+              ].some(main => key.startsWith(main)),
           )
           .map(([key, value]) => ({
             label: NUTRIENT_LABELS_ES[key] ?? key,
@@ -644,52 +664,184 @@ export class NutritionService {
   async getAllProducts(
     page: number = 1,
     pageSize: number = 100,
-  ): Promise<any[]> {
+  ): Promise<{ products: any[]; total: number }> {
     try {
+      // Usar el parámetro countries_tags para filtrar por España
+      // También puedes usar categories populares en España
       const response = await lastValueFrom(
         this.httpService.get(
-          `https://world.openfoodfacts.org/api/v2/search?search_terms=leche&search_simple=1&action=process&json=1&page=${page}&page_size=${pageSize}&fields=product_name,product_name_es,nutrition_grades,nutriments,image_url,code&lc=es`,
+          `https://world.openfoodfacts.org/api/v2/search?` +
+            `countries_tags=spain&` + // Filtra productos vendidos en España
+            `language=es&` + // Idioma español
+            `fields=product_name,product_name_es,brands,countries_tags,nutrition_grades,nutriments,image_url,code&` +
+            `page=${page}&` +
+            `page_size=${pageSize}&` +
+            `sort_by=unique_scans_n&` + // Ordena por popularidad
+            `json=1`,
+          {
+            headers: {
+              'User-Agent': 'GymTrackerApp/1.0',
+            },
+          },
         ),
       );
 
       const products = response.data.products || [];
 
-      console.log('Productos obtenidos:', page, pageSize);
+      console.log('Productos obtenidos:', page, pageSize, products.length);
 
-      return products.map((product: any) => ({
+      const mappedProducts = products
+        .filter((product: any) => {
+          // Filtros adicionales para asegurar calidad
+          const hasSpanishName =
+            product.product_name_es ||
+            (product.product_name &&
+              /^[a-zA-Z0-9\sáéíóúñÁÉÍÓÚÑ.,'-]+$/.test(product.product_name));
+          const hasNutriments =
+            product.nutriments &&
+            (product.nutriments['energy-kcal'] !== undefined ||
+              product.nutriments['energy-kcal_100g'] !== undefined);
+
+          return hasSpanishName && hasNutriments;
+        })
+        .map((product: any) => ({
+          code: product.code,
+          name:
+            product.product_name_es ??
+            product.product_name ??
+            'Producto sin nombre',
+          brand: product.brands ?? null,
+          image: product.image_url ?? null,
+          nutritionGrade: product.nutrition_grades ?? null,
+          grams: product.nutriments?.['serving_size']
+            ? parseInt(product.nutriments.serving_size)
+            : 100,
+          calories:
+            product.nutriments?.['energy-kcal_100g'] ??
+            product.nutriments?.['energy-kcal'] ??
+            null,
+          carbohydrates:
+            product.nutriments?.['carbohydrates_100g'] ??
+            product.nutriments?.['carbohydrates'] ??
+            null,
+          protein:
+            product.nutriments?.['proteins_100g'] ??
+            product.nutriments?.['proteins'] ??
+            null,
+          fat:
+            product.nutriments?.['fat_100g'] ??
+            product.nutriments?.['fat'] ??
+            null,
+          others: Object.entries(product.nutriments ?? {})
+            .filter(
+              ([key]) =>
+                ![
+                  'energy-kcal',
+                  'energy-kcal_100g',
+                  'energy',
+                  'carbohydrates',
+                  'carbohydrates_100g',
+                  'proteins',
+                  'proteins_100g',
+                  'fat',
+                  'fat_100g',
+                  'nova',
+                ].some(main => key.startsWith(main)),
+            )
+            .map(([key, value]) => ({
+              label: NUTRIENT_LABELS_ES[key] ?? key,
+              value,
+            })),
+        }));
+
+      return {
+        products: mappedProducts,
+        total: response.data.count || mappedProducts.length,
+      };
+    } catch (error) {
+      console.error('Error obteniendo productos:', error);
+      return {
+        products: [],
+        total: 0,
+      };
+    }
+  }
+
+  // nutrition.service.ts
+
+  async getProductDetail(code: string): Promise<any> {
+    try {
+      const response = await lastValueFrom(
+        this.httpService.get(
+          `https://world.openfoodfacts.org/api/v2/product/${code}?fields=product_name,product_name_es,brands,countries_tags,nutrition_grades,nutriments,image_url,code&lc=es`,
+        ),
+      );
+
+      const product = response.data.product;
+
+      if (!product) {
+        throw new NotFoundException(
+          `Producto con código ${code} no encontrado`,
+        );
+      }
+
+      console.log('Product detail obtenido:', product.code);
+
+      // Mapear el producto con la misma estructura que getAllProducts
+      const mappedProduct = {
         code: product.code,
         name:
           product.product_name_es ??
           product.product_name ??
           'Producto sin nombre',
+        brand: product.brands ?? null,
         image: product.image_url ?? null,
         nutritionGrade: product.nutrition_grades ?? null,
-        grams: product.nutriments?.['serving_size']
-          ? parseInt(product.nutriments.serving_size)
-          : 100,
-        calories: product.nutriments?.['energy-kcal'] ?? null,
-        carbohydrates: product.nutriments?.['carbohydrates'] ?? null,
-        protein: product.nutriments?.['proteins'] ?? null,
-        fat: product.nutriments?.['fat'] ?? null,
+        grams: 100, // Base de cálculo por defecto
+        calories:
+          product.nutriments?.['energy-kcal_100g'] ??
+          product.nutriments?.['energy-kcal'] ??
+          null,
+        carbohydrates:
+          product.nutriments?.['carbohydrates_100g'] ??
+          product.nutriments?.['carbohydrates'] ??
+          null,
+        protein:
+          product.nutriments?.['proteins_100g'] ??
+          product.nutriments?.['proteins'] ??
+          null,
+        fat:
+          product.nutriments?.['fat_100g'] ??
+          product.nutriments?.['fat'] ??
+          null,
         others: Object.entries(product.nutriments ?? {})
           .filter(
             ([key]) =>
               ![
                 'energy-kcal',
+                'energy-kcal_100g',
                 'energy',
                 'carbohydrates',
+                'carbohydrates_100g',
                 'proteins',
+                'proteins_100g',
                 'fat',
+                'fat_100g',
                 'nova',
-              ].some((main) => key.startsWith(main)),
+              ].some(main => key.startsWith(main)),
           )
           .map(([key, value]) => ({
             label: NUTRIENT_LABELS_ES[key] ?? key,
             value,
           })),
-      }));
+      };
+
+      return mappedProduct;
     } catch (error) {
-      throw new Error('No se pudo obtener el listado de productos.');
+      console.error('Error obteniendo detalle del producto:', error);
+      throw new NotFoundException(
+        `No se pudo obtener el detalle del producto con código ${code}`,
+      );
     }
   }
 
@@ -734,4 +886,329 @@ export class NutritionService {
       throw new Error('No se pudo obtener el detalle del producto.');
     }
   } */
+
+  // ==================== USER PROFILE METHODS ====================
+
+  async getUserProfile(
+    userId: string,
+  ): Promise<UserNutritionProfileResponseDto> {
+    const profile = await this.userProfileRepo.findOne({
+      where: { userId },
+    });
+
+    if (!profile) {
+      throw new NotFoundException(
+        `Perfil de usuario no encontrado para userId: ${userId}`,
+      );
+    }
+
+    return this.mapProfileToDto(profile);
+  }
+
+  async createUserProfile(
+    dto: CreateUserNutritionProfileDto,
+  ): Promise<UserNutritionProfileResponseDto> {
+    // Check if profile already exists
+    const existing = await this.userProfileRepo.findOne({
+      where: { userId: dto.userId },
+    });
+
+    if (existing) {
+      throw new Error('El perfil de usuario ya existe');
+    }
+
+    const profile = this.userProfileRepo.create({
+      userId: dto.userId,
+      weight: dto.anthropometrics.weight,
+      height: dto.anthropometrics.height,
+      age: dto.anthropometrics.age,
+      gender: dto.anthropometrics.gender,
+      activityLevel: dto.anthropometrics.activityLevel,
+      weightGoal: dto.goals.weightGoal,
+      targetWeight: dto.goals.targetWeight,
+      weeklyWeightChange: dto.goals.weeklyWeightChange,
+      dailyCalories: dto.macroGoals.dailyCalories,
+      proteinGrams: dto.macroGoals.protein,
+      carbsGrams: dto.macroGoals.carbs,
+      fatGrams: dto.macroGoals.fat,
+      weightUnit: dto.preferences.weightUnit,
+      heightUnit: dto.preferences.heightUnit,
+    });
+
+    const saved = await this.userProfileRepo.save(profile);
+    return this.mapProfileToDto(saved);
+  }
+
+  async updateUserProfile(
+    userId: string,
+    dto: UpdateUserNutritionProfileDto,
+  ): Promise<UserNutritionProfileResponseDto> {
+    const profile = await this.userProfileRepo.findOne({
+      where: { userId },
+    });
+
+    if (!profile) {
+      throw new NotFoundException(
+        `Perfil no encontrado para userId: ${userId}`,
+      );
+    }
+
+    // Update anthropometrics if provided
+    if (dto.anthropometrics) {
+      if (dto.anthropometrics.weight !== undefined)
+        profile.weight = dto.anthropometrics.weight;
+      if (dto.anthropometrics.height !== undefined)
+        profile.height = dto.anthropometrics.height;
+      if (dto.anthropometrics.age !== undefined)
+        profile.age = dto.anthropometrics.age;
+      if (dto.anthropometrics.gender !== undefined)
+        profile.gender = dto.anthropometrics.gender;
+      if (dto.anthropometrics.activityLevel !== undefined)
+        profile.activityLevel = dto.anthropometrics.activityLevel;
+    }
+
+    // Update goals if provided
+    if (dto.goals) {
+      if (dto.goals.weightGoal !== undefined)
+        profile.weightGoal = dto.goals.weightGoal;
+      if (dto.goals.targetWeight !== undefined)
+        profile.targetWeight = dto.goals.targetWeight;
+      if (dto.goals.weeklyWeightChange !== undefined)
+        profile.weeklyWeightChange = dto.goals.weeklyWeightChange;
+    }
+
+    // Update macro goals if provided
+    if (dto.macroGoals) {
+      if (dto.macroGoals.dailyCalories !== undefined)
+        profile.dailyCalories = dto.macroGoals.dailyCalories;
+      if (dto.macroGoals.protein !== undefined)
+        profile.proteinGrams = dto.macroGoals.protein;
+      if (dto.macroGoals.carbs !== undefined)
+        profile.carbsGrams = dto.macroGoals.carbs;
+      if (dto.macroGoals.fat !== undefined)
+        profile.fatGrams = dto.macroGoals.fat;
+    }
+
+    // Update preferences if provided
+    if (dto.preferences) {
+      if (dto.preferences.weightUnit !== undefined)
+        profile.weightUnit = dto.preferences.weightUnit;
+      if (dto.preferences.heightUnit !== undefined)
+        profile.heightUnit = dto.preferences.heightUnit;
+    }
+
+    const updated = await this.userProfileRepo.save(profile);
+    return this.mapProfileToDto(updated);
+  }
+
+  async updateMacroGoals(
+    userId: string,
+    dto: UpdateMacroGoalsDto,
+  ): Promise<UserNutritionProfileResponseDto> {
+    const profile = await this.userProfileRepo.findOne({
+      where: { userId },
+    });
+
+    if (!profile) {
+      throw new NotFoundException(
+        `Perfil no encontrado para userId: ${userId}`,
+      );
+    }
+
+    profile.dailyCalories = dto.dailyCalories;
+    profile.proteinGrams = dto.protein;
+    profile.carbsGrams = dto.carbs;
+    profile.fatGrams = dto.fat;
+
+    const updated = await this.userProfileRepo.save(profile);
+    return this.mapProfileToDto(updated);
+  }
+
+  // ==================== FOOD DIARY METHODS ====================
+
+  async addFoodEntry(dto: CreateFoodEntryDto): Promise<FoodEntryResponseDto> {
+    const entry = this.foodEntryRepo.create(dto);
+    const saved = await this.foodEntryRepo.save(entry);
+    return this.mapFoodEntryToDto(saved);
+  }
+
+  async getDailyEntries(
+    userId: string,
+    date: string,
+  ): Promise<DailyNutritionSummaryDto> {
+    const entries = await this.foodEntryRepo.find({
+      where: { userId, date },
+      order: { createdAt: 'ASC' },
+    });
+
+    // Get user profile for goals
+    const profile = await this.userProfileRepo.findOne({
+      where: { userId },
+    });
+
+    if (!profile) {
+      throw new NotFoundException(
+        `Perfil no encontrado para userId: ${userId}`,
+      );
+    }
+
+    // Calculate totals
+    const totals = entries.reduce(
+      (acc, entry) => ({
+        calories: acc.calories + Number(entry.calories),
+        protein: acc.protein + Number(entry.protein),
+        carbs: acc.carbs + Number(entry.carbs),
+        fat: acc.fat + Number(entry.fat),
+      }),
+      { calories: 0, protein: 0, carbs: 0, fat: 0 },
+    );
+
+    return {
+      date,
+      entries: entries.map(e => this.mapFoodEntryToDto(e)),
+      totals,
+      goals: {
+        dailyCalories: profile.dailyCalories,
+        protein: Number(profile.proteinGrams),
+        carbs: Number(profile.carbsGrams),
+        fat: Number(profile.fatGrams),
+      },
+    };
+  }
+
+  async updateFoodEntry(
+    entryId: string,
+    dto: UpdateFoodEntryDto,
+  ): Promise<FoodEntryResponseDto> {
+    const entry = await this.foodEntryRepo.findOne({
+      where: { id: entryId },
+    });
+
+    if (!entry) {
+      throw new NotFoundException(`Entrada no encontrada: ${entryId}`);
+    }
+
+    // Update fields
+    if (dto.quantity !== undefined) entry.quantity = dto.quantity;
+    if (dto.unit !== undefined) entry.unit = dto.unit;
+    if (dto.customUnitName !== undefined)
+      entry.customUnitName = dto.customUnitName;
+    if (dto.customUnitGrams !== undefined)
+      entry.customUnitGrams = dto.customUnitGrams;
+    if (dto.mealType !== undefined) entry.mealType = dto.mealType;
+    if (dto.calories !== undefined) entry.calories = dto.calories;
+    if (dto.protein !== undefined) entry.protein = dto.protein;
+    if (dto.carbs !== undefined) entry.carbs = dto.carbs;
+    if (dto.fat !== undefined) entry.fat = dto.fat;
+
+    const updated = await this.foodEntryRepo.save(entry);
+    return this.mapFoodEntryToDto(updated);
+  }
+
+  async deleteFoodEntry(entryId: string): Promise<void> {
+    const result = await this.foodEntryRepo.delete(entryId);
+
+    if (result.affected === 0) {
+      throw new NotFoundException(`Entrada no encontrada: ${entryId}`);
+    }
+  }
+
+  async getWeeklySummary(
+    userId: string,
+    startDate: string,
+  ): Promise<DailyNutritionSummaryDto[]> {
+    const start = new Date(startDate);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+
+    const summaries: DailyNutritionSummaryDto[] = [];
+
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(start);
+      date.setDate(date.getDate() + i);
+      const dateStr = date.toISOString().split('T')[0];
+
+      const summary = await this.getDailyEntries(userId, dateStr);
+      summaries.push(summary);
+    }
+
+    return summaries;
+  }
+
+  async getMonthlySummary(
+    userId: string,
+    year: number,
+    month: number,
+  ): Promise<DailyNutritionSummaryDto[]> {
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const summaries: DailyNutritionSummaryDto[] = [];
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month - 1, day);
+      const dateStr = date.toISOString().split('T')[0];
+
+      const summary = await this.getDailyEntries(userId, dateStr);
+      summaries.push(summary);
+    }
+
+    return summaries;
+  }
+
+  // ==================== HELPER METHODS ====================
+
+  private mapProfileToDto(
+    profile: UserNutritionProfileEntity,
+  ): UserNutritionProfileResponseDto {
+    return {
+      id: profile.id,
+      userId: profile.userId,
+      anthropometrics: {
+        weight: Number(profile.weight),
+        height: Number(profile.height),
+        age: profile.age,
+        gender: profile.gender,
+        activityLevel: profile.activityLevel,
+      },
+      goals: {
+        weightGoal: profile.weightGoal,
+        targetWeight: Number(profile.targetWeight),
+        weeklyWeightChange: Number(profile.weeklyWeightChange),
+      },
+      macroGoals: {
+        dailyCalories: profile.dailyCalories,
+        protein: Number(profile.proteinGrams),
+        carbs: Number(profile.carbsGrams),
+        fat: Number(profile.fatGrams),
+      },
+      preferences: {
+        weightUnit: profile.weightUnit,
+        heightUnit: profile.heightUnit,
+      },
+      createdAt: profile.createdAt,
+      updatedAt: profile.updatedAt,
+    };
+  }
+
+  private mapFoodEntryToDto(entry: FoodEntryEntity): FoodEntryResponseDto {
+    return {
+      id: entry.id,
+      userId: entry.userId,
+      productCode: entry.productCode,
+      productName: entry.productName,
+      productImage: entry.productImage,
+      date: entry.date,
+      mealType: entry.mealType,
+      quantity: Number(entry.quantity),
+      unit: entry.unit,
+      customUnitName: entry.customUnitName,
+      customUnitGrams: entry.customUnitGrams
+        ? Number(entry.customUnitGrams)
+        : undefined,
+      calories: Number(entry.calories),
+      protein: Number(entry.protein),
+      carbs: Number(entry.carbs),
+      fat: Number(entry.fat),
+      createdAt: entry.createdAt,
+    };
+  }
 }
