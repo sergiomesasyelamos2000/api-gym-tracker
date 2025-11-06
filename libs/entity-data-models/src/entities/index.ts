@@ -8,3 +8,7 @@ export * from './muscle.entity';
 export * from './exercise-type.entity';
 export * from './user-nutrition-profile.entity';
 export * from './food-entry.entity';
+export * from './shopping-list-item.entity';
+export * from './favorite-product.entity';
+export * from './custom-product.entity';
+export * from './custom-meal.entity';

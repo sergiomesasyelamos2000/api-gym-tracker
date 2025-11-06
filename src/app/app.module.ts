@@ -1,14 +1,18 @@
 /* eslint-disable prettier/prettier */
 import {
+  CustomMealEntity,
+  CustomProductEntity,
   EquipmentEntity,
   ExerciseEntity,
   ExerciseTypeEntity,
+  FavoriteProductEntity,
   FoodEntryEntity,
   MuscleEntity,
   RoutineEntity,
   RoutineExerciseEntity,
   RoutineSessionEntity,
   SetEntity,
+  ShoppingListItemEntity,
   UserNutritionProfileEntity,
 } from '@app/entity-data-models';
 import { Module, OnApplicationBootstrap } from '@nestjs/common';
@@ -52,6 +56,10 @@ import { ConfigModule } from '@nestjs/config';
         ExerciseTypeEntity,
         UserNutritionProfileEntity,
         FoodEntryEntity,
+        ShoppingListItemEntity,
+        FavoriteProductEntity,
+        CustomProductEntity,
+        CustomMealEntity,
       ],
       synchronize: true,
     }),

@@ -11,7 +11,7 @@ import { UserNutritionProfileEntity } from './user-nutrition-profile.entity';
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 export type FoodUnit = 'gram' | 'ml' | 'portion' | 'custom';
 
-@Entity()
+@Entity('food_entries')
 export class FoodEntryEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

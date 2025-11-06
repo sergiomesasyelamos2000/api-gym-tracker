@@ -3,3 +3,7 @@ export * from './routine.model';
 export * from './set.model';
 export * from './routine-session.model';
 export * from './nutrition.model';
+export * from './shopping-list.dto';
+export * from './favorite-product.dto';
+export * from './custom-product.dto';
+export * from './custom-meal.dto';

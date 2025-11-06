@@ -6,6 +6,10 @@ import { HttpModule } from '@nestjs/axios';
 import {
   UserNutritionProfileEntity,
   FoodEntryEntity,
+  ShoppingListItemEntity,
+  FavoriteProductEntity,
+  CustomProductEntity,
+  CustomMealEntity,
 } from '@app/entity-data-models';
 
 @Module({
@@ -16,6 +20,10 @@ import {
     TypeOrmModule.forFeature([
       UserNutritionProfileEntity,
       FoodEntryEntity,
+      ShoppingListItemEntity,
+      FavoriteProductEntity,
+      CustomProductEntity,
+      CustomMealEntity,
     ]),
   ],
 })

@@ -18,6 +18,13 @@ import {
   UpdateMacroGoalsDto,
   CreateFoodEntryDto,
   UpdateFoodEntryDto,
+  CreateShoppingListItemDto,
+  UpdateShoppingListItemDto,
+  CreateFavoriteProductDto,
+  CreateCustomProductDto,
+  UpdateCustomProductDto,
+  CreateCustomMealDto,
+  UpdateCustomMealDto,
 } from '@app/entity-data-models';
 
 @Controller('nutrition')
@@ -164,5 +171,171 @@ export class NutritionController {
     @Query('month') month: number,
   ) {
     return this.nutritionService.getMonthlySummary(userId, year, month);
+  }
+
+  // ==================== SHOPPING LIST ENDPOINTS ====================
+
+  @Post('shopping-list')
+  async addToShoppingList(@Body() dto: CreateShoppingListItemDto) {
+    return this.nutritionService.addToShoppingList(dto);
+  }
+
+  @Get('shopping-list/:userId')
+  async getShoppingList(@Param('userId') userId: string) {
+    return this.nutritionService.getShoppingList(userId);
+  }
+
+  @Put('shopping-list/:itemId')
+  async updateShoppingListItem(
+    @Param('itemId') itemId: string,
+    @Body() dto: UpdateShoppingListItemDto,
+  ) {
+    return this.nutritionService.updateShoppingListItem(itemId, dto);
+  }
+
+  @Put('shopping-list/:itemId/toggle')
+  async togglePurchased(@Param('itemId') itemId: string) {
+    return this.nutritionService.togglePurchased(itemId);
+  }
+
+  @Delete('shopping-list/:itemId')
+  async deleteShoppingListItem(@Param('itemId') itemId: string) {
+    return this.nutritionService.deleteShoppingListItem(itemId);
+  }
+
+  @Delete('shopping-list/:userId/purchased')
+  async clearPurchasedItems(@Param('userId') userId: string) {
+    return this.nutritionService.clearPurchasedItems(userId);
+  }
+
+  @Delete('shopping-list/:userId/all')
+  async clearShoppingList(@Param('userId') userId: string) {
+    return this.nutritionService.clearShoppingList(userId);
+  }
+
+  // ==================== FAVORITES ENDPOINTS ====================
+
+  @Post('favorites')
+  async addFavorite(@Body() dto: CreateFavoriteProductDto) {
+    return this.nutritionService.addFavorite(dto);
+  }
+
+  @Get('favorites/:userId')
+  async getFavorites(@Param('userId') userId: string) {
+    return this.nutritionService.getFavorites(userId);
+  }
+
+  @Get('favorites/:userId/check/:productCode')
+  async isFavorite(
+    @Param('userId') userId: string,
+    @Param('productCode') productCode: string,
+  ) {
+    return this.nutritionService.isFavorite(userId, productCode);
+  }
+
+  @Delete('favorites/:userId/product/:productCode')
+  async removeFavoriteByProductCode(
+    @Param('userId') userId: string,
+    @Param('productCode') productCode: string,
+  ) {
+    return this.nutritionService.removeFavoriteByProductCode(
+      userId,
+      productCode,
+    );
+  }
+
+  @Get('favorites/:userId/search')
+  async searchFavorites(
+    @Param('userId') userId: string,
+    @Query('query') query: string,
+  ) {
+    return this.nutritionService.searchFavorites(userId, query);
+  }
+
+  // ==================== CUSTOM PRODUCTS ENDPOINTS ====================
+
+  @Post('custom-products')
+  async createCustomProduct(@Body() dto: CreateCustomProductDto) {
+    return this.nutritionService.createCustomProduct(dto);
+  }
+
+  @Get('custom-products/:userId')
+  async getCustomProducts(@Param('userId') userId: string) {
+    return this.nutritionService.getCustomProducts(userId);
+  }
+
+  @Get('custom-products/:userId/:productId')
+  async getCustomProductById(
+    @Param('userId') userId: string,
+    @Param('productId') productId: string,
+  ) {
+    return this.nutritionService.getCustomProductById(userId, productId);
+  }
+
+  @Put('custom-products/:productId')
+  async updateCustomProduct(
+    @Param('productId') productId: string,
+    @Body() dto: UpdateCustomProductDto,
+  ) {
+    return this.nutritionService.updateCustomProduct(productId, dto);
+  }
+
+  @Delete('custom-products/:productId')
+  async deleteCustomProduct(@Param('productId') productId: string) {
+    return this.nutritionService.deleteCustomProduct(productId);
+  }
+
+  @Get('custom-products/:userId/search')
+  async searchCustomProducts(
+    @Param('userId') userId: string,
+    @Query('query') query: string,
+  ) {
+    return this.nutritionService.searchCustomProducts(userId, query);
+  }
+
+  // ==================== CUSTOM MEALS ENDPOINTS ====================
+
+  @Post('custom-meals')
+  async createCustomMeal(@Body() dto: CreateCustomMealDto) {
+    return this.nutritionService.createCustomMeal(dto);
+  }
+
+  @Get('custom-meals/:userId')
+  async getCustomMeals(@Param('userId') userId: string) {
+    return this.nutritionService.getCustomMeals(userId);
+  }
+
+  @Get('custom-meals/:userId/:mealId')
+  async getCustomMealById(
+    @Param('userId') userId: string,
+    @Param('mealId') mealId: string,
+  ) {
+    return this.nutritionService.getCustomMealById(userId, mealId);
+  }
+
+  @Put('custom-meals/:mealId')
+  async updateCustomMeal(
+    @Param('mealId') mealId: string,
+    @Body() dto: UpdateCustomMealDto,
+  ) {
+    return this.nutritionService.updateCustomMeal(mealId, dto);
+  }
+
+  @Delete('custom-meals/:mealId')
+  async deleteCustomMeal(@Param('mealId') mealId: string) {
+    return this.nutritionService.deleteCustomMeal(mealId);
+  }
+
+  @Post('custom-meals/:mealId/duplicate')
+  async duplicateCustomMeal(@Param('mealId') mealId: string) {
+    return this.nutritionService.duplicateCustomMeal(mealId);
+  }
+
+  @Get('custom-meals/:userId/search')
+  async searchCustomMeals(
+    @Param('userId') userId: string,
+    @Query('query') query: string,
+  ) {
+    return this.nutritionService.searchCustomMeals(userId, query);
   }
 }

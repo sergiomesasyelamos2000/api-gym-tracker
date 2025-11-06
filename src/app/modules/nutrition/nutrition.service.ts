@@ -17,7 +17,31 @@ import {
   UserNutritionProfileResponseDto,
   FoodEntryResponseDto,
   DailyNutritionSummaryDto,
+  ShoppingListItemEntity,
+  FavoriteProductEntity,
+  CustomProductEntity,
+  CustomMealEntity,
 } from '@app/entity-data-models';
+import {
+  CreateShoppingListItemDto,
+  ShoppingListItemResponseDto,
+  UpdateShoppingListItemDto,
+} from '@app/entity-data-models/dtos/shopping-list.dto';
+import {
+  CreateCustomMealDto,
+  CustomMealResponseDto,
+  UpdateCustomMealDto,
+  MealProductDto,
+} from '@app/entity-data-models/dtos/custom-meal.dto';
+import {
+  CreateCustomProductDto,
+  CustomProductResponseDto,
+  UpdateCustomProductDto,
+} from '@app/entity-data-models/dtos/custom-product.dto';
+import {
+  CreateFavoriteProductDto,
+  FavoriteProductResponseDto,
+} from '@app/entity-data-models/dtos/favorite-product.dto';
 
 @Injectable()
 export class NutritionService {
@@ -31,6 +55,14 @@ export class NutritionService {
     private readonly userProfileRepo: Repository<UserNutritionProfileEntity>,
     @InjectRepository(FoodEntryEntity)
     private readonly foodEntryRepo: Repository<FoodEntryEntity>,
+    @InjectRepository(ShoppingListItemEntity)
+    private readonly shoppingListRepo: Repository<ShoppingListItemEntity>,
+    @InjectRepository(FavoriteProductEntity)
+    private readonly favoriteProductRepo: Repository<FavoriteProductEntity>,
+    @InjectRepository(CustomProductEntity)
+    private readonly customProductRepo: Repository<CustomProductEntity>,
+    @InjectRepository(CustomMealEntity)
+    private readonly customMealRepo: Repository<CustomMealEntity>,
   ) {}
 
   // CHATBOT
@@ -1041,6 +1073,8 @@ export class NutritionService {
       order: { createdAt: 'ASC' },
     });
 
+    console.log('userId', userId);
+
     // Get user profile for goals
     const profile = await this.userProfileRepo.findOne({
       where: { userId },
@@ -1210,5 +1244,916 @@ export class NutritionService {
       fat: Number(entry.fat),
       createdAt: entry.createdAt,
     };
+  }
+
+  // ==================== SHOPPING LIST METHODS ====================
+
+  /**
+   * Add a product to the shopping list
+   * @param dto - Shopping list item creation data
+   * @returns Created shopping list item
+   */
+  async addToShoppingList(
+    dto: CreateShoppingListItemDto,
+  ): Promise<ShoppingListItemResponseDto> {
+    // Check if item already exists for this user and product
+    const existing = await this.shoppingListRepo.findOne({
+      where: {
+        userId: dto.userId,
+        productCode: dto.productCode,
+      },
+    });
+
+    if (existing) {
+      // Update quantity if item already exists
+      existing.quantity = Number(existing.quantity) + Number(dto.quantity);
+      const updated = await this.shoppingListRepo.save(existing);
+      return this.mapShoppingListItemToDto(updated);
+    }
+
+    const item = this.shoppingListRepo.create(dto);
+    const saved = await this.shoppingListRepo.save(item);
+    return this.mapShoppingListItemToDto(saved);
+  }
+
+  /**
+   * Get all shopping list items for a user
+   * @param userId - User identifier
+   * @returns Array of shopping list items
+   */
+  async getShoppingList(
+    userId: string,
+  ): Promise<ShoppingListItemResponseDto[]> {
+    const items = await this.shoppingListRepo.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+
+    return items.map(item => this.mapShoppingListItemToDto(item));
+  }
+
+  /**
+   * Get shopping list items by purchase status
+   * @param userId - User identifier
+   * @param purchased - Filter by purchased status
+   * @returns Array of shopping list items
+   */
+  async getShoppingListByStatus(
+    userId: string,
+    purchased: boolean,
+  ): Promise<ShoppingListItemResponseDto[]> {
+    const items = await this.shoppingListRepo.find({
+      where: { userId, purchased },
+      order: { createdAt: 'DESC' },
+    });
+
+    return items.map(item => this.mapShoppingListItemToDto(item));
+  }
+
+  /**
+   * Update a shopping list item
+   * @param itemId - Shopping list item identifier
+   * @param dto - Update data
+   * @returns Updated shopping list item
+   * @throws NotFoundException if item not found
+   */
+  async updateShoppingListItem(
+    itemId: string,
+    dto: UpdateShoppingListItemDto,
+  ): Promise<ShoppingListItemResponseDto> {
+    const item = await this.shoppingListRepo.findOne({
+      where: { id: itemId },
+    });
+
+    if (!item) {
+      throw new NotFoundException(
+        `Item de lista de compras no encontrado: ${itemId}`,
+      );
+    }
+
+    // Update fields if provided
+    if (dto.quantity !== undefined) item.quantity = dto.quantity;
+    if (dto.unit !== undefined) item.unit = dto.unit;
+    if (dto.customUnitName !== undefined)
+      item.customUnitName = dto.customUnitName;
+    if (dto.customUnitGrams !== undefined)
+      item.customUnitGrams = dto.customUnitGrams;
+    if (dto.purchased !== undefined) item.purchased = dto.purchased;
+
+    const updated = await this.shoppingListRepo.save(item);
+    return this.mapShoppingListItemToDto(updated);
+  }
+
+  /**
+   * Toggle shopping list item purchased status
+   * @param itemId - Shopping list item identifier
+   * @returns Updated shopping list item
+   * @throws NotFoundException if item not found
+   */
+  async togglePurchased(itemId: string): Promise<ShoppingListItemResponseDto> {
+    const item = await this.shoppingListRepo.findOne({
+      where: { id: itemId },
+    });
+
+    if (!item) {
+      throw new NotFoundException(
+        `Item de lista de compras no encontrado: ${itemId}`,
+      );
+    }
+
+    // Toggle the purchased status
+    item.purchased = !item.purchased;
+
+    const updated = await this.shoppingListRepo.save(item);
+    return this.mapShoppingListItemToDto(updated);
+  }
+
+  /**
+   * Delete a shopping list item
+   * @param itemId - Shopping list item identifier
+   * @throws NotFoundException if item not found
+   */
+  async deleteShoppingListItem(itemId: string): Promise<void> {
+    const result = await this.shoppingListRepo.delete(itemId);
+
+    if (result.affected === 0) {
+      throw new NotFoundException(
+        `Item de lista de compras no encontrado: ${itemId}`,
+      );
+    }
+  }
+
+  /**
+   * Delete all purchased items from shopping list
+   * @param userId - User identifier
+   * @returns Number of deleted items
+   */
+  async clearPurchasedItems(userId: string): Promise<number> {
+    const result = await this.shoppingListRepo.delete({
+      userId,
+      purchased: true,
+    });
+
+    return result.affected || 0;
+  }
+
+  /**
+   * Delete all shopping list items for a user
+   * @param userId - User identifier
+   * @returns Number of deleted items
+   */
+  async clearShoppingList(userId: string): Promise<number> {
+    const result = await this.shoppingListRepo.delete({ userId });
+    return result.affected || 0;
+  }
+
+  // ==================== FAVORITE PRODUCTS METHODS ====================
+
+  /**
+   * Add a product to favorites
+   * @param dto - Favorite product creation data
+   * @returns Created favorite product
+   */
+  async addFavorite(
+    dto: CreateFavoriteProductDto,
+  ): Promise<FavoriteProductResponseDto> {
+    // Check if product is already favorited
+    const existing = await this.favoriteProductRepo.findOne({
+      where: {
+        userId: dto.userId,
+        productCode: dto.productCode,
+      },
+    });
+
+    if (existing) {
+      // Return existing favorite instead of creating duplicate
+      return this.mapFavoriteProductToDto(existing);
+    }
+
+    const favorite = this.favoriteProductRepo.create(dto);
+    const saved = await this.favoriteProductRepo.save(favorite);
+    return this.mapFavoriteProductToDto(saved);
+  }
+
+  /**
+   * Get all favorite products for a user
+   * @param userId - User identifier
+   * @returns Array of favorite products
+   */
+  async getFavorites(userId: string): Promise<FavoriteProductResponseDto[]> {
+    const favorites = await this.favoriteProductRepo.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+
+    return favorites.map(fav => this.mapFavoriteProductToDto(fav));
+  }
+
+  /**
+   * Get a single favorite product by ID
+   * @param favoriteId - Favorite product identifier
+   * @returns Favorite product
+   * @throws NotFoundException if favorite not found
+   */
+  async getFavoriteById(
+    favoriteId: string,
+  ): Promise<FavoriteProductResponseDto> {
+    const favorite = await this.favoriteProductRepo.findOne({
+      where: { id: favoriteId },
+    });
+
+    if (!favorite) {
+      throw new NotFoundException(
+        `Producto favorito no encontrado: ${favoriteId}`,
+      );
+    }
+
+    return this.mapFavoriteProductToDto(favorite);
+  }
+
+  /**
+   * Check if a product is favorited by user
+   * @param userId - User identifier
+   * @param productCode - Product code
+   * @returns True if product is favorited, false otherwise
+   */
+  async isFavorite(userId: string, productCode: string): Promise<boolean> {
+    const favorite = await this.favoriteProductRepo.findOne({
+      where: { userId, productCode },
+    });
+
+    return !!favorite;
+  }
+
+  /**
+   * Remove a product from favorites by favorite ID
+   * @param favoriteId - Favorite product identifier
+   * @throws NotFoundException if favorite not found
+   */
+  async removeFavorite(favoriteId: string): Promise<void> {
+    const result = await this.favoriteProductRepo.delete(favoriteId);
+
+    if (result.affected === 0) {
+      throw new NotFoundException(
+        `Producto favorito no encontrado: ${favoriteId}`,
+      );
+    }
+  }
+
+  /**
+   * Remove a product from favorites by user ID and product code
+   * @param userId - User identifier
+   * @param productCode - Product code
+   * @throws NotFoundException if favorite not found
+   */
+  async removeFavoriteByProductCode(
+    userId: string,
+    productCode: string,
+  ): Promise<void> {
+    const result = await this.favoriteProductRepo.delete({
+      userId,
+      productCode,
+    });
+
+    if (result.affected === 0) {
+      throw new NotFoundException(
+        `Producto favorito no encontrado para el código: ${productCode}`,
+      );
+    }
+  }
+
+  /**
+   * Search favorites by product name
+   * @param userId - User identifier
+   * @param searchTerm - Search term for product name
+   * @returns Array of matching favorite products
+   */
+  async searchFavorites(
+    userId: string,
+    searchTerm: string,
+  ): Promise<FavoriteProductResponseDto[]> {
+    const favorites = await this.favoriteProductRepo
+      .createQueryBuilder('favorite')
+      .where('favorite.userId = :userId', { userId })
+      .andWhere('LOWER(favorite.productName) LIKE LOWER(:searchTerm)', {
+        searchTerm: `%${searchTerm}%`,
+      })
+      .orderBy('favorite.createdAt', 'DESC')
+      .getMany();
+
+    return favorites.map(fav => this.mapFavoriteProductToDto(fav));
+  }
+
+  // ==================== CUSTOM PRODUCTS METHODS ====================
+
+  /**
+   * Create a custom product
+   * @param dto - Custom product creation data
+   * @returns Created custom product
+   */
+  async createCustomProduct(
+    dto: CreateCustomProductDto,
+  ): Promise<CustomProductResponseDto> {
+    const product = this.customProductRepo.create(dto);
+    const saved = await this.customProductRepo.save(product);
+    return this.mapCustomProductToDto(saved);
+  }
+
+  /**
+   * Get all custom products for a user
+   * @param userId - User identifier
+   * @returns Array of custom products
+   */
+  async getCustomProducts(userId: string): Promise<CustomProductResponseDto[]> {
+    const products = await this.customProductRepo.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+
+    return products.map(product => this.mapCustomProductToDto(product));
+  }
+
+  /**
+   * Get a single custom product by ID
+   * @param productId - Custom product identifier
+   * @returns Custom product
+   * @throws NotFoundException if product not found
+   */
+  async getCustomProductById(
+    userId: string,
+    productId: string,
+  ): Promise<CustomProductResponseDto> {
+    const product = await this.customProductRepo.findOne({
+      where: { id: productId, userId },
+    });
+
+    if (!product) {
+      throw new NotFoundException(
+        `Producto personalizado no encontrado: ${productId}`,
+      );
+    }
+
+    return this.mapCustomProductToDto(product);
+  }
+
+  /**
+   * Get custom products by user and optional barcode
+   * @param userId - User identifier
+   * @param barcode - Optional barcode filter
+   * @returns Array of custom products or single product if barcode matches
+   */
+  async getCustomProductByBarcode(
+    userId: string,
+    barcode: string,
+  ): Promise<CustomProductResponseDto | null> {
+    const product = await this.customProductRepo.findOne({
+      where: { userId, barcode },
+    });
+
+    return product ? this.mapCustomProductToDto(product) : null;
+  }
+
+  /**
+   * Update a custom product
+   * @param productId - Custom product identifier
+   * @param dto - Update data
+   * @returns Updated custom product
+   * @throws NotFoundException if product not found
+   */
+  async updateCustomProduct(
+    productId: string,
+    dto: UpdateCustomProductDto,
+  ): Promise<CustomProductResponseDto> {
+    const product = await this.customProductRepo.findOne({
+      where: { id: productId },
+    });
+
+    if (!product) {
+      throw new NotFoundException(
+        `Producto personalizado no encontrado: ${productId}`,
+      );
+    }
+
+    // Update fields if provided
+    if (dto.name !== undefined) product.name = dto.name;
+    if (dto.description !== undefined) product.description = dto.description;
+    if (dto.image !== undefined) product.image = dto.image;
+    if (dto.brand !== undefined) product.brand = dto.brand;
+    if (dto.caloriesPer100 !== undefined)
+      product.caloriesPer100 = dto.caloriesPer100;
+    if (dto.proteinPer100 !== undefined)
+      product.proteinPer100 = dto.proteinPer100;
+    if (dto.carbsPer100 !== undefined) product.carbsPer100 = dto.carbsPer100;
+    if (dto.fatPer100 !== undefined) product.fatPer100 = dto.fatPer100;
+    if (dto.fiberPer100 !== undefined) product.fiberPer100 = dto.fiberPer100;
+    if (dto.sugarPer100 !== undefined) product.sugarPer100 = dto.sugarPer100;
+    if (dto.sodiumPer100 !== undefined) product.sodiumPer100 = dto.sodiumPer100;
+    if (dto.servingSize !== undefined) product.servingSize = dto.servingSize;
+    if (dto.servingUnit !== undefined) product.servingUnit = dto.servingUnit;
+    if (dto.barcode !== undefined) product.barcode = dto.barcode;
+
+    const updated = await this.customProductRepo.save(product);
+    return this.mapCustomProductToDto(updated);
+  }
+
+  /**
+   * Delete a custom product
+   * @param productId - Custom product identifier
+   * @throws NotFoundException if product not found
+   */
+  async deleteCustomProduct(productId: string): Promise<void> {
+    const result = await this.customProductRepo.delete(productId);
+
+    if (result.affected === 0) {
+      throw new NotFoundException(
+        `Producto personalizado no encontrado: ${productId}`,
+      );
+    }
+  }
+
+  /**
+   * Search custom products by name
+   * @param userId - User identifier
+   * @param searchTerm - Search term for product name
+   * @returns Array of matching custom products
+   */
+  async searchCustomProducts(
+    userId: string,
+    searchTerm: string,
+  ): Promise<CustomProductResponseDto[]> {
+    const products = await this.customProductRepo
+      .createQueryBuilder('product')
+      .where('product.userId = :userId', { userId })
+      .andWhere('LOWER(product.name) LIKE LOWER(:searchTerm)', {
+        searchTerm: `%${searchTerm}%`,
+      })
+      .orderBy('product.createdAt', 'DESC')
+      .getMany();
+
+    return products.map(product => this.mapCustomProductToDto(product));
+  }
+
+  // ==================== CUSTOM MEALS METHODS ====================
+
+  /**
+   * Create a custom meal
+   * @param dto - Custom meal creation data
+   * @returns Created custom meal
+   */
+  async createCustomMeal(
+    dto: CreateCustomMealDto,
+  ): Promise<CustomMealResponseDto> {
+    // Calculate total nutritional values from products
+    const totals = this.calculateMealTotals(dto.products);
+
+    const meal = this.customMealRepo.create({
+      userId: dto.userId,
+      name: dto.name,
+      description: dto.description,
+      image: dto.image,
+      products: dto.products,
+      totalCalories: totals.calories,
+      totalProtein: totals.protein,
+      totalCarbs: totals.carbs,
+      totalFat: totals.fat,
+    });
+
+    const saved = await this.customMealRepo.save(meal);
+    return this.mapCustomMealToDto(saved);
+  }
+
+  /**
+   * Get all custom meals for a user
+   * @param userId - User identifier
+   * @returns Array of custom meals
+   */
+  async getCustomMeals(userId: string): Promise<CustomMealResponseDto[]> {
+    const meals = await this.customMealRepo.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+
+    return meals.map(meal => this.mapCustomMealToDto(meal));
+  }
+
+  /**
+   * Get a single custom meal by ID
+   * @param mealId - Custom meal identifier
+   * @returns Custom meal
+   * @throws NotFoundException if meal not found
+   */
+  async getCustomMealById(
+    userId: string,
+    mealId: string,
+  ): Promise<CustomMealResponseDto> {
+    const meal = await this.customMealRepo.findOne({
+      where: { id: mealId, userId },
+    });
+
+    if (!meal) {
+      throw new NotFoundException(
+        `Comida personalizada no encontrada: ${mealId}`,
+      );
+    }
+
+    return this.mapCustomMealToDto(meal);
+  }
+
+  /**
+   * Update a custom meal
+   * @param mealId - Custom meal identifier
+   * @param dto - Update data
+   * @returns Updated custom meal
+   * @throws NotFoundException if meal not found
+   */
+  async updateCustomMeal(
+    mealId: string,
+    dto: UpdateCustomMealDto,
+  ): Promise<CustomMealResponseDto> {
+    const meal = await this.customMealRepo.findOne({
+      where: { id: mealId },
+    });
+
+    if (!meal) {
+      throw new NotFoundException(
+        `Comida personalizada no encontrada: ${mealId}`,
+      );
+    }
+
+    // Update fields if provided
+    if (dto.name !== undefined) meal.name = dto.name;
+    if (dto.description !== undefined) meal.description = dto.description;
+    if (dto.image !== undefined) meal.image = dto.image;
+    if (dto.products !== undefined) {
+      meal.products = dto.products;
+      // Recalculate totals when products change
+      const totals = this.calculateMealTotals(dto.products);
+      meal.totalCalories = totals.calories;
+      meal.totalProtein = totals.protein;
+      meal.totalCarbs = totals.carbs;
+      meal.totalFat = totals.fat;
+    }
+
+    const updated = await this.customMealRepo.save(meal);
+    return this.mapCustomMealToDto(updated);
+  }
+
+  /**
+   * Delete a custom meal
+   * @param mealId - Custom meal identifier
+   * @throws NotFoundException if meal not found
+   */
+  async deleteCustomMeal(mealId: string): Promise<void> {
+    const result = await this.customMealRepo.delete(mealId);
+
+    if (result.affected === 0) {
+      throw new NotFoundException(
+        `Comida personalizada no encontrada: ${mealId}`,
+      );
+    }
+  }
+
+  /**
+   * Search custom meals by name
+   * @param userId - User identifier
+   * @param searchTerm - Search term for meal name
+   * @returns Array of matching custom meals
+   */
+  async searchCustomMeals(
+    userId: string,
+    searchTerm: string,
+  ): Promise<CustomMealResponseDto[]> {
+    const meals = await this.customMealRepo
+      .createQueryBuilder('meal')
+      .where('meal.userId = :userId', { userId })
+      .andWhere('LOWER(meal.name) LIKE LOWER(:searchTerm)', {
+        searchTerm: `%${searchTerm}%`,
+      })
+      .orderBy('meal.createdAt', 'DESC')
+      .getMany();
+
+    return meals.map(meal => this.mapCustomMealToDto(meal));
+  }
+
+  /**
+   * Duplicate a custom meal (create a copy)
+   * @param mealId - Custom meal identifier to duplicate
+   * @param newName - Optional new name for the duplicated meal
+   * @returns Newly created custom meal
+   * @throws NotFoundException if meal not found
+   */
+  async duplicateCustomMeal(
+    mealId: string,
+    newName?: string,
+  ): Promise<CustomMealResponseDto> {
+    const originalMeal = await this.customMealRepo.findOne({
+      where: { id: mealId },
+    });
+
+    if (!originalMeal) {
+      throw new NotFoundException(
+        `Comida personalizada no encontrada: ${mealId}`,
+      );
+    }
+
+    const duplicatedMeal = this.customMealRepo.create({
+      userId: originalMeal.userId,
+      name: newName || `${originalMeal.name} (Copia)`,
+      description: originalMeal.description,
+      image: originalMeal.image,
+      products: originalMeal.products,
+      totalCalories: originalMeal.totalCalories,
+      totalProtein: originalMeal.totalProtein,
+      totalCarbs: originalMeal.totalCarbs,
+      totalFat: originalMeal.totalFat,
+    });
+
+    const saved = await this.customMealRepo.save(duplicatedMeal);
+    return this.mapCustomMealToDto(saved);
+  }
+
+  // ==================== HELPER/MAPPER METHODS ====================
+
+  /**
+   * Map ShoppingListItemEntity to DTO
+   * @param item - Shopping list item entity
+   * @returns Shopping list item response DTO
+   */
+  private mapShoppingListItemToDto(
+    item: ShoppingListItemEntity,
+  ): ShoppingListItemResponseDto {
+    return {
+      id: item.id,
+      userId: item.userId,
+      productCode: item.productCode,
+      productName: item.productName,
+      productImage: item.productImage,
+      quantity: Number(item.quantity),
+      unit: item.unit,
+      customUnitName: item.customUnitName,
+      customUnitGrams: item.customUnitGrams
+        ? Number(item.customUnitGrams)
+        : undefined,
+      purchased: item.purchased,
+      createdAt: item.createdAt,
+    };
+  }
+
+  /**
+   * Map FavoriteProductEntity to DTO
+   * @param favorite - Favorite product entity
+   * @returns Favorite product response DTO
+   */
+  private mapFavoriteProductToDto(
+    favorite: FavoriteProductEntity,
+  ): FavoriteProductResponseDto {
+    return {
+      id: favorite.id,
+      userId: favorite.userId,
+      productCode: favorite.productCode,
+      productName: favorite.productName,
+      productImage: favorite.productImage,
+      calories: Number(favorite.calories),
+      protein: Number(favorite.protein),
+      carbs: Number(favorite.carbs),
+      fat: Number(favorite.fat),
+      createdAt: favorite.createdAt,
+    };
+  }
+
+  /**
+   * Map CustomProductEntity to DTO
+   * @param product - Custom product entity
+   * @returns Custom product response DTO
+   */
+  private mapCustomProductToDto(
+    product: CustomProductEntity,
+  ): CustomProductResponseDto {
+    return {
+      id: product.id,
+      userId: product.userId,
+      name: product.name,
+      description: product.description,
+      image: product.image,
+      brand: product.brand,
+      caloriesPer100: Number(product.caloriesPer100),
+      proteinPer100: Number(product.proteinPer100),
+      carbsPer100: Number(product.carbsPer100),
+      fatPer100: Number(product.fatPer100),
+      fiberPer100: product.fiberPer100
+        ? Number(product.fiberPer100)
+        : undefined,
+      sugarPer100: product.sugarPer100
+        ? Number(product.sugarPer100)
+        : undefined,
+      sodiumPer100: product.sodiumPer100
+        ? Number(product.sodiumPer100)
+        : undefined,
+      servingSize: product.servingSize
+        ? Number(product.servingSize)
+        : undefined,
+      servingUnit: product.servingUnit,
+      barcode: product.barcode,
+      createdAt: product.createdAt,
+      updatedAt: product.updatedAt,
+    };
+  }
+
+  /**
+   * Map CustomMealEntity to DTO
+   * @param meal - Custom meal entity
+   * @returns Custom meal response DTO
+   */
+  private mapCustomMealToDto(meal: CustomMealEntity): CustomMealResponseDto {
+    return {
+      id: meal.id,
+      userId: meal.userId,
+      name: meal.name,
+      description: meal.description,
+      image: meal.image,
+      products: meal.products,
+      totalCalories: Number(meal.totalCalories),
+      totalProtein: Number(meal.totalProtein),
+      totalCarbs: Number(meal.totalCarbs),
+      totalFat: Number(meal.totalFat),
+      createdAt: meal.createdAt,
+      updatedAt: meal.updatedAt,
+    };
+  }
+
+  /**
+   * Calculate total nutritional values from meal products
+   * @param products - Array of meal products
+   * @returns Object with total calories, protein, carbs, and fat
+   */
+  private calculateMealTotals(products: MealProductDto[]): {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+  } {
+    return products.reduce(
+      (totals, product) => ({
+        calories: totals.calories + Number(product.calories),
+        protein: totals.protein + Number(product.protein),
+        carbs: totals.carbs + Number(product.carbs),
+        fat: totals.fat + Number(product.fat),
+      }),
+      { calories: 0, protein: 0, carbs: 0, fat: 0 },
+    );
+  }
+
+  /**
+   * Validate if user owns the shopping list item
+   * @param itemId - Shopping list item identifier
+   * @param userId - User identifier
+   * @returns True if user owns the item
+   * @throws NotFoundException if item not found or user doesn't own it
+   */
+  async validateShoppingListOwnership(
+    itemId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const item = await this.shoppingListRepo.findOne({
+      where: { id: itemId },
+    });
+
+    if (!item) {
+      throw new NotFoundException(
+        `Item de lista de compras no encontrado: ${itemId}`,
+      );
+    }
+
+    if (item.userId !== userId) {
+      throw new NotFoundException('No tienes permiso para acceder a este item');
+    }
+
+    return true;
+  }
+
+  /**
+   * Validate if user owns the favorite product
+   * @param favoriteId - Favorite product identifier
+   * @param userId - User identifier
+   * @returns True if user owns the favorite
+   * @throws NotFoundException if favorite not found or user doesn't own it
+   */
+  async validateFavoriteOwnership(
+    favoriteId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const favorite = await this.favoriteProductRepo.findOne({
+      where: { id: favoriteId },
+    });
+
+    if (!favorite) {
+      throw new NotFoundException(
+        `Producto favorito no encontrado: ${favoriteId}`,
+      );
+    }
+
+    if (favorite.userId !== userId) {
+      throw new NotFoundException(
+        'No tienes permiso para acceder a este favorito',
+      );
+    }
+
+    return true;
+  }
+
+  /**
+   * Validate if user owns the custom product
+   * @param productId - Custom product identifier
+   * @param userId - User identifier
+   * @returns True if user owns the product
+   * @throws NotFoundException if product not found or user doesn't own it
+   */
+  async validateCustomProductOwnership(
+    productId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const product = await this.customProductRepo.findOne({
+      where: { id: productId },
+    });
+
+    if (!product) {
+      throw new NotFoundException(
+        `Producto personalizado no encontrado: ${productId}`,
+      );
+    }
+
+    if (product.userId !== userId) {
+      throw new NotFoundException(
+        'No tienes permiso para acceder a este producto',
+      );
+    }
+
+    return true;
+  }
+
+  /**
+   * Validate if user owns the custom meal
+   * @param mealId - Custom meal identifier
+   * @param userId - User identifier
+   * @returns True if user owns the meal
+   * @throws NotFoundException if meal not found or user doesn't own it
+   */
+  async validateCustomMealOwnership(
+    mealId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const meal = await this.customMealRepo.findOne({
+      where: { id: mealId },
+    });
+
+    if (!meal) {
+      throw new NotFoundException(
+        `Comida personalizada no encontrada: ${mealId}`,
+      );
+    }
+
+    if (meal.userId !== userId) {
+      throw new NotFoundException(
+        'No tienes permiso para acceder a esta comida',
+      );
+    }
+
+    return true;
+  }
+
+  /**
+   * Get count of items in shopping list
+   * @param userId - User identifier
+   * @returns Total count of shopping list items
+   */
+  async getShoppingListCount(userId: string): Promise<number> {
+    return this.shoppingListRepo.count({ where: { userId } });
+  }
+
+  /**
+   * Get count of favorite products
+   * @param userId - User identifier
+   * @returns Total count of favorite products
+   */
+  async getFavoritesCount(userId: string): Promise<number> {
+    return this.favoriteProductRepo.count({ where: { userId } });
+  }
+
+  /**
+   * Get count of custom products
+   * @param userId - User identifier
+   * @returns Total count of custom products
+   */
+  async getCustomProductsCount(userId: string): Promise<number> {
+    return this.customProductRepo.count({ where: { userId } });
+  }
+
+  /**
+   * Get count of custom meals
+   * @param userId - User identifier
+   * @returns Total count of custom meals
+   */
+  async getCustomMealsCount(userId: string): Promise<number> {
+    return this.customMealRepo.count({ where: { userId } });
   }
 }
