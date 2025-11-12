@@ -32,7 +32,9 @@ import { ConfigModule } from '@nestjs/config';
 @Module({
   imports: [
     ConfigModule.forRoot({
-      isGlobal: true, // así puedes usarlo en toda la app sin importarlo en cada módulo
+      isGlobal: true,
+      envFilePath: '.env', // Ruta al archivo .env
+      cache: true,
     }),
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'public'),

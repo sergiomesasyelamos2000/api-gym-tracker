@@ -1,37 +1,24 @@
-import { GoogleGenAI } from '@google/genai';
-import { HttpService } from '@nestjs/axios';
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
-import { lastValueFrom } from 'rxjs';
-import { ENV } from '../../../environments/environment';
-import NUTRIENT_LABELS_ES from '../../utils/nutrients-labels';
 import {
-  UserNutritionProfileEntity,
-  FoodEntryEntity,
-  CreateUserNutritionProfileDto,
-  UpdateUserNutritionProfileDto,
-  UpdateMacroGoalsDto,
   CreateFoodEntryDto,
-  UpdateFoodEntryDto,
-  UserNutritionProfileResponseDto,
-  FoodEntryResponseDto,
-  DailyNutritionSummaryDto,
-  ShoppingListItemEntity,
-  FavoriteProductEntity,
-  CustomProductEntity,
+  CreateUserNutritionProfileDto,
   CustomMealEntity,
+  CustomProductEntity,
+  DailyNutritionSummaryDto,
+  FavoriteProductEntity,
+  FoodEntryEntity,
+  FoodEntryResponseDto,
+  ShoppingListItemEntity,
+  UpdateFoodEntryDto,
+  UpdateMacroGoalsDto,
+  UpdateUserNutritionProfileDto,
+  UserNutritionProfileEntity,
+  UserNutritionProfileResponseDto,
 } from '@app/entity-data-models';
-import {
-  CreateShoppingListItemDto,
-  ShoppingListItemResponseDto,
-  UpdateShoppingListItemDto,
-} from '@app/entity-data-models/dtos/shopping-list.dto';
 import {
   CreateCustomMealDto,
   CustomMealResponseDto,
-  UpdateCustomMealDto,
   MealProductDto,
+  UpdateCustomMealDto,
 } from '@app/entity-data-models/dtos/custom-meal.dto';
 import {
   CreateCustomProductDto,
@@ -42,6 +29,20 @@ import {
   CreateFavoriteProductDto,
   FavoriteProductResponseDto,
 } from '@app/entity-data-models/dtos/favorite-product.dto';
+import {
+  CreateShoppingListItemDto,
+  ShoppingListItemResponseDto,
+  UpdateShoppingListItemDto,
+} from '@app/entity-data-models/dtos/shopping-list.dto';
+import { GoogleGenAI } from '@google/genai';
+import { HttpService } from '@nestjs/axios';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { lastValueFrom } from 'rxjs';
+import { Repository } from 'typeorm';
+import cloudinary from '../../../config/cloudinary.config';
+import { ENV } from '../../../environments/environment';
+import NUTRIENT_LABELS_ES from '../../utils/nutrients-labels';
 
 @Injectable()
 export class NutritionService {
@@ -1554,9 +1555,26 @@ export class NutritionService {
   async createCustomProduct(
     dto: CreateCustomProductDto,
   ): Promise<CustomProductResponseDto> {
-    const product = this.customProductRepo.create(dto);
-    const saved = await this.customProductRepo.save(product);
-    return this.mapCustomProductToDto(saved);
+    try {
+      // Si hay imagen en base64, subirla a Cloudinary
+      let imageUrl: string | undefined = undefined;
+      if (dto.image && dto.image.startsWith('data:image')) {
+        imageUrl = await this.uploadToCloudinary(dto.image, 'products');
+      } else if (dto.image) {
+        imageUrl = dto.image; // URL ya existente
+      }
+
+      const product = this.customProductRepo.create({
+        ...dto,
+        image: imageUrl,
+      });
+
+      const saved = await this.customProductRepo.save(product);
+      return this.mapCustomProductToDto(saved);
+    } catch (error) {
+      console.error('Error creating custom product:', error);
+      throw error;
+    }
   }
 
   /**
@@ -1634,10 +1652,23 @@ export class NutritionService {
       );
     }
 
+    // Si hay nueva imagen en base64, subirla
+    let imageUrl = product.image;
+    if (dto.image && dto.image.startsWith('data:image')) {
+      // Eliminar imagen anterior de Cloudinary si existe
+      if (product.image && product.image.includes('cloudinary.com')) {
+        const publicId = this.extractPublicIdFromUrl(product.image);
+        await this.deleteFromCloudinary(publicId);
+      }
+      imageUrl = await this.uploadToCloudinary(dto.image, 'products');
+    } else if (dto.image !== undefined) {
+      imageUrl = dto.image;
+    }
+
     // Update fields if provided
     if (dto.name !== undefined) product.name = dto.name;
     if (dto.description !== undefined) product.description = dto.description;
-    if (dto.image !== undefined) product.image = dto.image;
+    product.image = imageUrl;
     if (dto.brand !== undefined) product.brand = dto.brand;
     if (dto.caloriesPer100 !== undefined)
       product.caloriesPer100 = dto.caloriesPer100;
@@ -1654,21 +1685,6 @@ export class NutritionService {
 
     const updated = await this.customProductRepo.save(product);
     return this.mapCustomProductToDto(updated);
-  }
-
-  /**
-   * Delete a custom product
-   * @param productId - Custom product identifier
-   * @throws NotFoundException if product not found
-   */
-  async deleteCustomProduct(productId: string): Promise<void> {
-    const result = await this.customProductRepo.delete(productId);
-
-    if (result.affected === 0) {
-      throw new NotFoundException(
-        `Producto personalizado no encontrado: ${productId}`,
-      );
-    }
   }
 
   /**
@@ -1703,23 +1719,36 @@ export class NutritionService {
   async createCustomMeal(
     dto: CreateCustomMealDto,
   ): Promise<CustomMealResponseDto> {
-    // Calculate total nutritional values from products
-    const totals = this.calculateMealTotals(dto.products);
+    try {
+      // Si hay imagen en base64, subirla a Cloudinary
+      let imageUrl: string | undefined = undefined;
+      if (dto.image && dto.image.startsWith('data:image')) {
+        imageUrl = await this.uploadToCloudinary(dto.image, 'meals');
+      } else if (dto.image) {
+        imageUrl = dto.image; // URL ya existente
+      }
 
-    const meal = this.customMealRepo.create({
-      userId: dto.userId,
-      name: dto.name,
-      description: dto.description,
-      image: dto.image,
-      products: dto.products,
-      totalCalories: totals.calories,
-      totalProtein: totals.protein,
-      totalCarbs: totals.carbs,
-      totalFat: totals.fat,
-    });
+      // Calculate total nutritional values from products
+      const totals = this.calculateMealTotals(dto.products);
 
-    const saved = await this.customMealRepo.save(meal);
-    return this.mapCustomMealToDto(saved);
+      const meal = this.customMealRepo.create({
+        userId: dto.userId,
+        name: dto.name,
+        description: dto.description,
+        image: imageUrl,
+        products: dto.products,
+        totalCalories: totals.calories,
+        totalProtein: totals.protein,
+        totalCarbs: totals.carbs,
+        totalFat: totals.fat,
+      });
+
+      const saved = await this.customMealRepo.save(meal);
+      return this.mapCustomMealToDto(saved);
+    } catch (error) {
+      console.error('Error creating custom meal:', error);
+      throw error;
+    }
   }
 
   /**
@@ -1780,10 +1809,23 @@ export class NutritionService {
       );
     }
 
+    // Si hay nueva imagen en base64, subirla
+    let imageUrl = meal.image;
+    if (dto.image && dto.image.startsWith('data:image')) {
+      // Eliminar imagen anterior de Cloudinary si existe
+      if (meal.image && meal.image.includes('cloudinary.com')) {
+        const publicId = this.extractPublicIdFromUrl(meal.image);
+        await this.deleteFromCloudinary(publicId);
+      }
+      imageUrl = await this.uploadToCloudinary(dto.image, 'meals');
+    } else if (dto.image !== undefined) {
+      imageUrl = dto.image;
+    }
+
     // Update fields if provided
     if (dto.name !== undefined) meal.name = dto.name;
     if (dto.description !== undefined) meal.description = dto.description;
-    if (dto.image !== undefined) meal.image = dto.image;
+    meal.image = imageUrl;
     if (dto.products !== undefined) {
       meal.products = dto.products;
       // Recalculate totals when products change
@@ -1796,21 +1838,6 @@ export class NutritionService {
 
     const updated = await this.customMealRepo.save(meal);
     return this.mapCustomMealToDto(updated);
-  }
-
-  /**
-   * Delete a custom meal
-   * @param mealId - Custom meal identifier
-   * @throws NotFoundException if meal not found
-   */
-  async deleteCustomMeal(mealId: string): Promise<void> {
-    const result = await this.customMealRepo.delete(mealId);
-
-    if (result.affected === 0) {
-      throw new NotFoundException(
-        `Comida personalizada no encontrada: ${mealId}`,
-      );
-    }
   }
 
   /**
@@ -2155,5 +2182,86 @@ export class NutritionService {
    */
   async getCustomMealsCount(userId: string): Promise<number> {
     return this.customMealRepo.count({ where: { userId } });
+  }
+
+  private async uploadToCloudinary(
+    base64Image: string,
+    folder: string,
+  ): Promise<string> {
+    try {
+      const result = await cloudinary.uploader.upload(base64Image, {
+        folder: `nutrition/${folder}`,
+        resource_type: 'auto',
+        transformation: [
+          { width: 800, height: 800, crop: 'limit' }, // Optimizar tamaño
+          { quality: 'auto' }, // Calidad automática
+          { fetch_format: 'auto' }, // Formato automático (webp si es posible)
+        ],
+      });
+
+      return result.secure_url;
+    } catch (error) {
+      console.error('Error uploading to Cloudinary:', error);
+      throw new Error('No se pudo subir la imagen');
+    }
+  }
+
+  private extractPublicIdFromUrl(url: string): string {
+    // Extraer public_id de la URL de Cloudinary
+    const matches = url.match(/nutrition\/(products|meals)\/[^.]+/);
+    return matches ? matches[0] : '';
+  }
+
+  private async deleteFromCloudinary(publicId: string): Promise<void> {
+    try {
+      if (publicId) {
+        await cloudinary.uploader.destroy(publicId);
+      }
+    } catch (error) {
+      console.error('Error deleting from Cloudinary:', error);
+      // No lanzar error, solo loguearlo
+    }
+  }
+
+  // Actualizar deleteCustomProduct para limpiar imágenes
+  async deleteCustomProduct(productId: string): Promise<void> {
+    const product = await this.customProductRepo.findOne({
+      where: { id: productId },
+    });
+
+    if (!product) {
+      throw new NotFoundException(
+        `Producto personalizado no encontrado: ${productId}`,
+      );
+    }
+
+    // Eliminar imagen de Cloudinary si existe
+    if (product.image && product.image.includes('cloudinary.com')) {
+      const publicId = this.extractPublicIdFromUrl(product.image);
+      await this.deleteFromCloudinary(publicId);
+    }
+
+    await this.customProductRepo.delete(productId);
+  }
+
+  // Actualizar deleteCustomMeal para limpiar imágenes
+  async deleteCustomMeal(mealId: string): Promise<void> {
+    const meal = await this.customMealRepo.findOne({
+      where: { id: mealId },
+    });
+
+    if (!meal) {
+      throw new NotFoundException(
+        `Comida personalizada no encontrada: ${mealId}`,
+      );
+    }
+
+    // Eliminar imagen de Cloudinary si existe
+    if (meal.image && meal.image.includes('cloudinary.com')) {
+      const publicId = this.extractPublicIdFromUrl(meal.image);
+      await this.deleteFromCloudinary(publicId);
+    }
+
+    await this.customMealRepo.delete(mealId);
   }
 }

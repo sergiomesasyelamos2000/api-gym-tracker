@@ -3,6 +3,9 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app/app.module';
 import 'reflect-metadata';
 import { json, urlencoded } from 'express';
+import * as dotenv from 'dotenv';
+
+dotenv.config();
 
 declare const module: any;
 
