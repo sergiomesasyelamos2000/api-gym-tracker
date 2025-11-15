@@ -2,12 +2,14 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { FoodEntryEntity } from './food-entry.entity';
 import { WeightUnit } from './set.entity';
+import { UserEntity } from './user.entity';
 
 export type ActivityLevel =
   | 'sedentary'
@@ -26,6 +28,9 @@ export class UserNutritionProfileEntity {
 
   @Column({ unique: true })
   userId!: string;
+
+  @ManyToOne(() => UserEntity, user => user.nutritionProfiles, { onDelete: 'CASCADE' })
+  user!: UserEntity;
 
   // Anthropometrics
   @Column({ type: 'decimal', precision: 5, scale: 2 })

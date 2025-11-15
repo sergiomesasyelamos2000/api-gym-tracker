@@ -9,8 +9,10 @@ import {
   Query,
   UploadedFile,
   UseInterceptors,
+  UseGuards,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { NutritionService } from './nutrition.service';
 import {
   CreateUserNutritionProfileDto,
@@ -26,12 +28,18 @@ import {
   CreateCustomMealDto,
   UpdateCustomMealDto,
 } from '@app/entity-data-models';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser, CurrentUserData } from '../auth/decorators/current-user.decorator';
 
+@ApiTags('nutrition')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('nutrition')
 export class NutritionController {
   constructor(private nutritionService: NutritionService) {}
 
   @Post()
+  @ApiOperation({ summary: 'Chat with nutrition AI' })
   async chat(@Body('text') text: string) {
     const base = await this.nutritionService.chat(text);
     return { reply: base };
@@ -39,6 +47,7 @@ export class NutritionController {
 
   @Post('photo')
   @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Analyze food photo' })
   async analyzePhoto(@UploadedFile() file: Express.Request) {
     if (!file) {
       throw new Error('No se recibió ningún archivo');
@@ -50,12 +59,14 @@ export class NutritionController {
   }
 
   @Post('barcode')
+  @ApiOperation({ summary: 'Scan product barcode' })
   async scanBarcode(@Body() body: any) {
     const product = await this.nutritionService.scanCode(body.code);
     return product;
   }
 
   @Get('products')
+  @ApiOperation({ summary: 'Get all products (paginated)' })
   async getAllProducts(
     @Query('page') page: string = '1',
     @Query('pageSize') pageSize: string = '100',
@@ -80,8 +91,8 @@ export class NutritionController {
     }
   }
 
-  // nutrition.controller.ts
   @Get('products/:code')
+  @ApiOperation({ summary: 'Get product detail by code' })
   async getProductDetail(@Param('code') code: string) {
     try {
       const product = await this.nutritionService.getProductDetail(code);
@@ -94,245 +105,323 @@ export class NutritionController {
 
   // ==================== USER PROFILE ENDPOINTS ====================
 
-  @Get('profile/:userId')
-  async getUserProfile(@Param('userId') userId: string) {
-    return this.nutritionService.getUserProfile(userId);
+  @Get('profile')
+  @ApiOperation({ summary: 'Get current user nutrition profile' })
+  async getUserProfile(@CurrentUser() user: CurrentUserData) {
+    return this.nutritionService.getUserProfile(user.id);
   }
 
   @Post('profile')
-  async createUserProfile(@Body() dto: CreateUserNutritionProfileDto) {
+  @ApiOperation({ summary: 'Create user nutrition profile' })
+  async createUserProfile(
+    @Body() dto: CreateUserNutritionProfileDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
     try {
-      const profile = await this.nutritionService.createUserProfile(dto);
-      return profile; // Ya devuelve el formato correcto gracias a mapProfileToDto
+      const profile = await this.nutritionService.createUserProfile({
+        ...dto,
+        userId: user.id,
+      });
+      return profile;
     } catch (error) {
       throw error;
     }
   }
 
-  @Put('profile/:userId')
+  @Put('profile')
+  @ApiOperation({ summary: 'Update user nutrition profile' })
   async updateUserProfile(
-    @Param('userId') userId: string,
     @Body() dto: UpdateUserNutritionProfileDto,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.updateUserProfile(userId, dto);
+    return this.nutritionService.updateUserProfile(user.id, dto);
   }
 
-  @Put('profile/:userId/goals')
+  @Put('profile/goals')
+  @ApiOperation({ summary: 'Update user macro goals' })
   async updateMacroGoals(
-    @Param('userId') userId: string,
     @Body() dto: UpdateMacroGoalsDto,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.updateMacroGoals(userId, dto);
+    return this.nutritionService.updateMacroGoals(user.id, dto);
   }
 
   // ==================== FOOD DIARY ENDPOINTS ====================
 
   @Post('diary')
-  async addFoodEntry(@Body() dto: CreateFoodEntryDto) {
-    return this.nutritionService.addFoodEntry(dto);
+  @ApiOperation({ summary: 'Add food entry to diary' })
+  async addFoodEntry(
+    @Body() dto: CreateFoodEntryDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.addFoodEntry({ ...dto, userId: user.id });
   }
 
-  @Get('diary/:userId/:date')
+  @Get('diary/:date')
+  @ApiOperation({ summary: 'Get daily food entries' })
   async getDailyEntries(
-    @Param('userId') userId: string,
     @Param('date') date: string,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.getDailyEntries(userId, date);
+    return this.nutritionService.getDailyEntries(user.id, date);
   }
 
   @Put('diary/:entryId')
+  @ApiOperation({ summary: 'Update food entry' })
   async updateFoodEntry(
     @Param('entryId') entryId: string,
     @Body() dto: UpdateFoodEntryDto,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.updateFoodEntry(entryId, dto);
+    return this.nutritionService.updateFoodEntry(entryId, dto, user.id);
   }
 
   @Delete('diary/:entryId')
-  async deleteFoodEntry(@Param('entryId') entryId: string) {
-    return this.nutritionService.deleteFoodEntry(entryId);
-  }
-
-  @Get('diary/:userId/weekly')
-  async getWeeklySummary(
-    @Param('userId') userId: string,
-    @Query('startDate') startDate: string,
+  @ApiOperation({ summary: 'Delete food entry' })
+  async deleteFoodEntry(
+    @Param('entryId') entryId: string,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.getWeeklySummary(userId, startDate);
+    return this.nutritionService.deleteFoodEntry(entryId, user.id);
   }
 
-  @Get('diary/:userId/monthly')
+  @Get('diary/weekly')
+  @ApiOperation({ summary: 'Get weekly food diary summary' })
+  async getWeeklySummary(
+    @Query('startDate') startDate: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.getWeeklySummary(user.id, startDate);
+  }
+
+  @Get('diary/monthly')
+  @ApiOperation({ summary: 'Get monthly food diary summary' })
   async getMonthlySummary(
-    @Param('userId') userId: string,
     @Query('year') year: number,
     @Query('month') month: number,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.getMonthlySummary(userId, year, month);
+    return this.nutritionService.getMonthlySummary(user.id, year, month);
   }
 
   // ==================== SHOPPING LIST ENDPOINTS ====================
 
   @Post('shopping-list')
-  async addToShoppingList(@Body() dto: CreateShoppingListItemDto) {
-    return this.nutritionService.addToShoppingList(dto);
+  @ApiOperation({ summary: 'Add item to shopping list' })
+  async addToShoppingList(
+    @Body() dto: CreateShoppingListItemDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.addToShoppingList({ ...dto, userId: user.id });
   }
 
-  @Get('shopping-list/:userId')
-  async getShoppingList(@Param('userId') userId: string) {
-    return this.nutritionService.getShoppingList(userId);
+  @Get('shopping-list')
+  @ApiOperation({ summary: 'Get user shopping list' })
+  async getShoppingList(@CurrentUser() user: CurrentUserData) {
+    return this.nutritionService.getShoppingList(user.id);
   }
 
   @Put('shopping-list/:itemId')
+  @ApiOperation({ summary: 'Update shopping list item' })
   async updateShoppingListItem(
     @Param('itemId') itemId: string,
     @Body() dto: UpdateShoppingListItemDto,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.updateShoppingListItem(itemId, dto);
+    return this.nutritionService.updateShoppingListItem(itemId, dto, user.id);
   }
 
   @Put('shopping-list/:itemId/toggle')
-  async togglePurchased(@Param('itemId') itemId: string) {
-    return this.nutritionService.togglePurchased(itemId);
+  @ApiOperation({ summary: 'Toggle purchased status' })
+  async togglePurchased(
+    @Param('itemId') itemId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.togglePurchased(itemId, user.id);
   }
 
   @Delete('shopping-list/:itemId')
-  async deleteShoppingListItem(@Param('itemId') itemId: string) {
-    return this.nutritionService.deleteShoppingListItem(itemId);
+  @ApiOperation({ summary: 'Delete shopping list item' })
+  async deleteShoppingListItem(
+    @Param('itemId') itemId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.deleteShoppingListItem(itemId, user.id);
   }
 
-  @Delete('shopping-list/:userId/purchased')
-  async clearPurchasedItems(@Param('userId') userId: string) {
-    return this.nutritionService.clearPurchasedItems(userId);
+  @Delete('shopping-list/purchased')
+  @ApiOperation({ summary: 'Clear purchased items from shopping list' })
+  async clearPurchasedItems(@CurrentUser() user: CurrentUserData) {
+    return this.nutritionService.clearPurchasedItems(user.id);
   }
 
-  @Delete('shopping-list/:userId/all')
-  async clearShoppingList(@Param('userId') userId: string) {
-    return this.nutritionService.clearShoppingList(userId);
+  @Delete('shopping-list/all')
+  @ApiOperation({ summary: 'Clear entire shopping list' })
+  async clearShoppingList(@CurrentUser() user: CurrentUserData) {
+    return this.nutritionService.clearShoppingList(user.id);
   }
 
   // ==================== FAVORITES ENDPOINTS ====================
 
   @Post('favorites')
-  async addFavorite(@Body() dto: CreateFavoriteProductDto) {
-    return this.nutritionService.addFavorite(dto);
-  }
-
-  @Get('favorites/:userId')
-  async getFavorites(@Param('userId') userId: string) {
-    return this.nutritionService.getFavorites(userId);
-  }
-
-  @Get('favorites/:userId/check/:productCode')
-  async isFavorite(
-    @Param('userId') userId: string,
-    @Param('productCode') productCode: string,
+  @ApiOperation({ summary: 'Add product to favorites' })
+  async addFavorite(
+    @Body() dto: CreateFavoriteProductDto,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.isFavorite(userId, productCode);
+    return this.nutritionService.addFavorite({ ...dto, userId: user.id });
   }
 
-  @Delete('favorites/:userId/product/:productCode')
-  async removeFavoriteByProductCode(
-    @Param('userId') userId: string,
+  @Get('favorites')
+  @ApiOperation({ summary: 'Get user favorite products' })
+  async getFavorites(@CurrentUser() user: CurrentUserData) {
+    return this.nutritionService.getFavorites(user.id);
+  }
+
+  @Get('favorites/check/:productCode')
+  @ApiOperation({ summary: 'Check if product is favorite' })
+  async isFavorite(
     @Param('productCode') productCode: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.isFavorite(user.id, productCode);
+  }
+
+  @Delete('favorites/product/:productCode')
+  @ApiOperation({ summary: 'Remove favorite product' })
+  async removeFavoriteByProductCode(
+    @Param('productCode') productCode: string,
+    @CurrentUser() user: CurrentUserData,
   ) {
     return this.nutritionService.removeFavoriteByProductCode(
-      userId,
+      user.id,
       productCode,
     );
   }
 
-  @Get('favorites/:userId/search')
+  @Get('favorites/search')
+  @ApiOperation({ summary: 'Search favorite products' })
   async searchFavorites(
-    @Param('userId') userId: string,
     @Query('query') query: string,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.searchFavorites(userId, query);
+    return this.nutritionService.searchFavorites(user.id, query);
   }
 
   // ==================== CUSTOM PRODUCTS ENDPOINTS ====================
 
   @Post('custom-products')
-  async createCustomProduct(@Body() dto: CreateCustomProductDto) {
-    return this.nutritionService.createCustomProduct(dto);
-  }
-
-  @Get('custom-products/:userId')
-  async getCustomProducts(@Param('userId') userId: string) {
-    return this.nutritionService.getCustomProducts(userId);
-  }
-
-  @Get('custom-products/:userId/:productId')
-  async getCustomProductById(
-    @Param('userId') userId: string,
-    @Param('productId') productId: string,
+  @ApiOperation({ summary: 'Create custom product' })
+  async createCustomProduct(
+    @Body() dto: CreateCustomProductDto,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.getCustomProductById(userId, productId);
+    return this.nutritionService.createCustomProduct({ ...dto, userId: user.id });
+  }
+
+  @Get('custom-products')
+  @ApiOperation({ summary: 'Get user custom products' })
+  async getCustomProducts(@CurrentUser() user: CurrentUserData) {
+    return this.nutritionService.getCustomProducts(user.id);
+  }
+
+  @Get('custom-products/:productId')
+  @ApiOperation({ summary: 'Get custom product by ID' })
+  async getCustomProductById(
+    @Param('productId') productId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.getCustomProductById(user.id, productId);
   }
 
   @Put('custom-products/:productId')
+  @ApiOperation({ summary: 'Update custom product' })
   async updateCustomProduct(
     @Param('productId') productId: string,
     @Body() dto: UpdateCustomProductDto,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.updateCustomProduct(productId, dto);
+    return this.nutritionService.updateCustomProduct(productId, dto, user.id);
   }
 
   @Delete('custom-products/:productId')
-  async deleteCustomProduct(@Param('productId') productId: string) {
-    return this.nutritionService.deleteCustomProduct(productId);
+  @ApiOperation({ summary: 'Delete custom product' })
+  async deleteCustomProduct(
+    @Param('productId') productId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.deleteCustomProduct(productId, user.id);
   }
 
-  @Get('custom-products/:userId/search')
+  @Get('custom-products/search')
+  @ApiOperation({ summary: 'Search custom products' })
   async searchCustomProducts(
-    @Param('userId') userId: string,
     @Query('query') query: string,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.searchCustomProducts(userId, query);
+    return this.nutritionService.searchCustomProducts(user.id, query);
   }
 
   // ==================== CUSTOM MEALS ENDPOINTS ====================
 
   @Post('custom-meals')
-  async createCustomMeal(@Body() dto: CreateCustomMealDto) {
-    return this.nutritionService.createCustomMeal(dto);
-  }
-
-  @Get('custom-meals/:userId')
-  async getCustomMeals(@Param('userId') userId: string) {
-    return this.nutritionService.getCustomMeals(userId);
-  }
-
-  @Get('custom-meals/:userId/:mealId')
-  async getCustomMealById(
-    @Param('userId') userId: string,
-    @Param('mealId') mealId: string,
+  @ApiOperation({ summary: 'Create custom meal' })
+  async createCustomMeal(
+    @Body() dto: CreateCustomMealDto,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.getCustomMealById(userId, mealId);
+    return this.nutritionService.createCustomMeal({ ...dto, userId: user.id });
+  }
+
+  @Get('custom-meals')
+  @ApiOperation({ summary: 'Get user custom meals' })
+  async getCustomMeals(@CurrentUser() user: CurrentUserData) {
+    return this.nutritionService.getCustomMeals(user.id);
+  }
+
+  @Get('custom-meals/:mealId')
+  @ApiOperation({ summary: 'Get custom meal by ID' })
+  async getCustomMealById(
+    @Param('mealId') mealId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.getCustomMealById(user.id, mealId);
   }
 
   @Put('custom-meals/:mealId')
+  @ApiOperation({ summary: 'Update custom meal' })
   async updateCustomMeal(
     @Param('mealId') mealId: string,
     @Body() dto: UpdateCustomMealDto,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.updateCustomMeal(mealId, dto);
+    return this.nutritionService.updateCustomMeal(mealId, dto, user.id);
   }
 
   @Delete('custom-meals/:mealId')
-  async deleteCustomMeal(@Param('mealId') mealId: string) {
-    return this.nutritionService.deleteCustomMeal(mealId);
+  @ApiOperation({ summary: 'Delete custom meal' })
+  async deleteCustomMeal(
+    @Param('mealId') mealId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.deleteCustomMeal(mealId, user.id);
   }
 
   @Post('custom-meals/:mealId/duplicate')
-  async duplicateCustomMeal(@Param('mealId') mealId: string) {
-    return this.nutritionService.duplicateCustomMeal(mealId);
+  @ApiOperation({ summary: 'Duplicate custom meal' })
+  async duplicateCustomMeal(
+    @Param('mealId') mealId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.duplicateCustomMeal(mealId, user.id);
   }
 
-  @Get('custom-meals/:userId/search')
+  @Get('custom-meals/search')
+  @ApiOperation({ summary: 'Search custom meals' })
   async searchCustomMeals(
-    @Param('userId') userId: string,
     @Query('query') query: string,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.searchCustomMeals(userId, query);
+    return this.nutritionService.searchCustomMeals(user.id, query);
   }
 }

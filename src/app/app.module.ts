@@ -13,6 +13,7 @@ import {
   RoutineSessionEntity,
   SetEntity,
   ShoppingListItemEntity,
+  UserEntity,
   UserNutritionProfileEntity,
 } from '@app/entity-data-models';
 import { Module, OnApplicationBootstrap } from '@nestjs/common';
@@ -23,6 +24,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { join } from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AuthModule } from './modules/auth/auth.module';
 import { ExercisesModule } from './modules/exercises/exercises.module';
 import { NutritionModule } from './modules/nutrition/nutrition.module';
 import { RoutineModule } from './modules/routine/routine.module';
@@ -47,6 +49,7 @@ import { PopulateModule } from './services/populate.module';
       password: 'postgres',
       database: 'gym_db',
       entities: [
+        UserEntity,
         RoutineEntity,
         ExerciseEntity,
         SetEntity,
@@ -65,6 +68,7 @@ import { PopulateModule } from './services/populate.module';
       synchronize: true,
     }),
     ScheduleModule.forRoot(),
+    AuthModule,
     ExercisesModule,
     RoutineModule,
     NutritionModule,

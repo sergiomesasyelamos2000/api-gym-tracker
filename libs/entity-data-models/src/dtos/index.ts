@@ -1,3 +1,4 @@
+export * from './auth.dto';
 export * from './exercise.model';
 export * from './routine.model';
 export * from './set.model';

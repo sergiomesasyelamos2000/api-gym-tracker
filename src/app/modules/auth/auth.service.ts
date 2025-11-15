@@ -1,51 +1,93 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { UserService } from './user.service';
+import { RegisterDto, LoginDto, AuthResponseDto } from '@app/entity-data-models';
+import { UserEntity } from '@app/entity-data-models';
 
 @Injectable()
 export class AuthService {
-  constructor(private jwtService: JwtService) {}
+  constructor(
+    private jwtService: JwtService,
+    private userService: UserService,
+  ) {}
 
-  async validateOAuthLogin(user: any, provider: string) {
-    // Buscar en BD si ya existe, si no crear
+  async register(registerDto: RegisterDto): Promise<AuthResponseDto> {
+    const user = await this.userService.create({
+      email: registerDto.email,
+      password: registerDto.password,
+      name: registerDto.name,
+      provider: 'local',
+    });
+
+    return this.generateAuthResponse(user);
+  }
+
+  async login(user: any): Promise<AuthResponseDto> {
+    // El usuario ya viene validado desde LocalStrategy
+    const fullUser = await this.userService.findById(user.id);
+    if (!fullUser) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    return this.generateAuthResponse(fullUser);
+  }
+
+  async validateOAuthLogin(oauthUser: any, provider: 'google' | 'apple'): Promise<AuthResponseDto> {
+    const user = await this.userService.findOrCreateOAuthUser(provider, {
+      providerId: oauthUser.providerId,
+      email: oauthUser.email,
+      name: oauthUser.name,
+      profilePicture: oauthUser.profilePicture,
+    });
+
+    return this.generateAuthResponse(user);
+  }
+
+  async validateGoogleAccessToken(accessToken: string, userInfo: any): Promise<AuthResponseDto> {
+    // Aquí podrías verificar el token con la API de Google si lo necesitas
+    // Por ahora asumimos que el token ya fue validado por el frontend
+
+    const user = await this.userService.findOrCreateOAuthUser('google', {
+      providerId: userInfo.id,
+      email: userInfo.email,
+      name: userInfo.name,
+      profilePicture: userInfo.picture,
+    });
+
+    return this.generateAuthResponse(user);
+  }
+
+  private generateAuthResponse(user: UserEntity): AuthResponseDto {
     const payload = {
-      sub: user.id, // id interno de tu DB
+      sub: user.id,
       email: user.email,
-      provider,
+      provider: user.provider,
     };
 
     return {
       accessToken: this.jwtService.sign(payload),
-      user,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        provider: user.provider,
+        profilePicture: user.profilePicture,
+      },
     };
   }
 
-  async validateGoogleAccessToken(accessToken: string, userInfo: any) {
-    // 1. VERIFICAR EL TOKEN (Ejemplo usando Axios)
-    // const googleResponse = await axios.get(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${accessToken}`);
-    // if (googleResponse.data.error) {
-    //   throw new UnauthorizedException('Token de Google inválido');
-    // }
-
-    // 2. BUSCAR O CREAR USUARIO EN TU BD basándote en userInfo.id o userInfo.email
-    /* let user = await this.userService.findByGoogleId(userInfo.id);
+  async validateUser(email: string, password: string): Promise<any> {
+    const user = await this.userService.validatePassword(email, password);
     if (!user) {
-      user = await this.userService.create({
-        googleId: userInfo.id,
-        email: userInfo.email,
-        name: userInfo.name,
-        // ... otros campos
-      });
-    } */
-
-    // 3. GENERAR JWT PROPIO
-    /*  const payload = {
-      sub: user.id, // ID interno de tu base de datos
-      email: user.email,
-    }; */
+      return null;
+    }
 
     return {
-      /*   accessToken: this.jwtService.sign(payload),
-      user: user, */
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      provider: user.provider,
+      profilePicture: user.profilePicture,
     };
   }
 }

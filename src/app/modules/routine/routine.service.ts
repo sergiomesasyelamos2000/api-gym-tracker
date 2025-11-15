@@ -11,7 +11,7 @@ import {
   RoutineSessionRequestDto,
   SetEntity,
 } from '@app/entity-data-models';
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Like, Repository } from 'typeorm';
 
@@ -30,9 +30,10 @@ export class RoutineService {
     private readonly sessionRepository: Repository<RoutineSessionEntity>,
   ) {}
 
-  async create(routineRequestDto: RoutineRequestDto): Promise<RoutineEntity> {
+  async create(routineRequestDto: RoutineRequestDto, userId: string): Promise<RoutineEntity> {
     const routine = this.routineRepository.create({
       title: routineRequestDto.title,
+      userId,
     });
 
     const savedRoutine = await this.routineRepository.save(routine);
@@ -108,9 +109,9 @@ export class RoutineService {
 
     return fullRoutine;
   }
-  async findOneWithExercises(id: string) {
-    return await this.routineRepository.findOne({
-      where: { id },
+  async findOneWithExercises(id: string, userId: string) {
+    const routine = await this.routineRepository.findOne({
+      where: { id, userId },
       relations: [
         'routineExercises',
         'routineExercises.exercise',
@@ -123,18 +124,25 @@ export class RoutineService {
         },
       },
     });
+
+    if (!routine) {
+      throw new NotFoundException(`Routine with id ${id} not found`);
+    }
+
+    return routine;
   }
 
   async update(
     id: string,
     routineRequestDto: RoutineRequestDto,
+    userId: string,
   ): Promise<RoutineEntity> {
+    const routine = await this.routineRepository.findOne({ where: { id, userId } });
+    if (!routine) throw new NotFoundException(`Routine with id ${id} not found`);
+
     await this.routineRepository.update(id, {
       title: routineRequestDto.title,
     });
-
-    const routine = await this.routineRepository.findOne({ where: { id } });
-    if (!routine) throw new Error(`Routine with id ${id} not found`);
 
     await this.routineExerciseRepository.delete({ routine: { id } });
 
@@ -187,20 +195,23 @@ export class RoutineService {
 
     await Promise.all(newRoutineExercises);
 
-    const updatedRoutine = await this.findOneWithExercises(id);
+    const updatedRoutine = await this.findOneWithExercises(id, userId);
     if (!updatedRoutine) {
-      throw new Error(`Routine with id ${id} not found`);
+      throw new NotFoundException(`Routine with id ${id} not found`);
     }
     return updatedRoutine;
   }
 
-  async duplicate(id: string): Promise<RoutineEntity> {
-    const original = await this.findOneWithExercises(id);
-    if (!original) throw new Error(`Routine with id ${id} not found`);
+  async duplicate(id: string, userId: string): Promise<RoutineEntity> {
+    const original = await this.findOneWithExercises(id, userId);
+    if (!original) throw new NotFoundException(`Routine with id ${id} not found`);
 
     const baseTitle = original.title.replace(/\s\(\d+\)$/, '');
     const allCopies = await this.routineRepository.find({
-      where: [{ title: baseTitle }, { title: Like(`${baseTitle} (%)`) }],
+      where: [
+        { title: baseTitle, userId },
+        { title: Like(`${baseTitle} (%)`), userId }
+      ],
       select: ['title'],
     });
 
@@ -217,6 +228,7 @@ export class RoutineService {
 
     const newRoutine = this.routineRepository.create({
       title: newTitle,
+      userId,
     });
     const savedRoutine = await this.routineRepository.save(newRoutine);
 
@@ -284,36 +296,42 @@ export class RoutineService {
     return fullRoutine || savedRoutine;
   }
 
-  async findOne(id: string): Promise<RoutineEntity> {
+  async findOne(id: string, userId: string): Promise<RoutineEntity> {
     const routine = await this.routineRepository.findOne({
-      where: { id },
+      where: { id, userId },
       relations: ['exercises'],
     });
     if (!routine) {
-      throw new Error(`Routine with id ${id} not found`);
+      throw new NotFoundException(`Routine with id ${id} not found`);
     }
     return routine;
   }
 
-  async findAll(): Promise<RoutineEntity[]> {
+  async findAll(userId: string): Promise<RoutineEntity[]> {
     return this.routineRepository.find({
+      where: { userId },
       order: { createdAt: 'DESC' },
     });
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, userId: string): Promise<void> {
+    const routine = await this.routineRepository.findOne({ where: { id, userId } });
+    if (!routine) {
+      throw new NotFoundException(`Routine with id ${id} not found`);
+    }
     await this.routineRepository.delete(id);
   }
 
   async addSession(
     dto: RoutineSessionRequestDto,
+    userId: string,
   ): Promise<RoutineSessionEntity> {
     const routine = await this.routineRepository.findOne({
-      where: { id: dto.routineId },
+      where: { id: dto.routineId, userId },
       relations: ['routineExercises', 'sessions'],
     });
 
-    if (!routine) throw new Error(`Routine with id ${dto.routineId} not found`);
+    if (!routine) throw new NotFoundException(`Routine with id ${dto.routineId} not found`);
 
     // Mapear ejercicios con información completa incluyendo imágenes
     const exercises = await Promise.all(
@@ -346,22 +364,33 @@ export class RoutineService {
     return this.sessionRepository.save(session);
   }
 
-  async getSessions(routineId: string) {
+  async getSessions(routineId: string, userId: string) {
+    // Verificar que la rutina pertenece al usuario
+    const routine = await this.routineRepository.findOne({
+      where: { id: routineId, userId },
+    });
+    if (!routine) {
+      throw new NotFoundException(`Routine with id ${routineId} not found`);
+    }
+
     return this.sessionRepository.find({
       where: { routine: { id: routineId } },
       order: { createdAt: 'DESC' },
     });
   }
 
-  async getAllSessions() {
+  async getAllSessions(userId: string) {
     return this.sessionRepository.find({
+      where: { routine: { userId } },
       relations: ['routine'],
       order: { createdAt: 'DESC' },
     });
   }
 
-  async getGlobalStats() {
-    const sessions = await this.sessionRepository.find();
+  async getGlobalStats(userId: string) {
+    const sessions = await this.sessionRepository.find({
+      where: { routine: { userId } },
+    });
     return {
       totalTime: sessions.reduce((acc, s) => acc + s.totalTime, 0),
       totalWeight: sessions.reduce((acc, s) => acc + s.totalWeight, 0),
