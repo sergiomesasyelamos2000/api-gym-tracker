@@ -5,7 +5,6 @@ import {
 } from '@app/entity-data-models';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { DataSeedService } from './equipment-seed.service';
 
 @Module({
   imports: [
@@ -15,7 +14,7 @@ import { DataSeedService } from './equipment-seed.service';
       ExerciseTypeEntity,
     ]),
   ],
-  providers: [DataSeedService],
-  exports: [DataSeedService],
+  providers: [],
+  exports: [],
 })
 export class PopulateModule {}

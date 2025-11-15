@@ -32,8 +32,6 @@ export class RoutineController {
 
   @Post()
   async create(@Body() routineRequestDto: RoutineRequestDto) {
-    console.log('Creating routine with data:', routineRequestDto);
-
     return await this.routineService.create(routineRequestDto);
   }
 

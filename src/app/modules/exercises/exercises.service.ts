@@ -2,10 +2,10 @@ import {
   CreateExerciseDto,
   EquipmentEntity,
   ExerciseEntity,
-  ExerciseRequestDto,
   ExerciseTypeEntity,
   MuscleEntity,
 } from '@app/entity-data-models';
+import { v2 as translate } from '@google-cloud/translate';
 import { HttpService } from '@nestjs/axios';
 import {
   Injectable,
@@ -14,11 +14,8 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import axios from 'axios';
-import * as fs from 'fs';
 import { firstValueFrom } from 'rxjs';
 import { Repository } from 'typeorm';
-import { v2 as translate } from '@google-cloud/translate';
 
 const sharp = require('sharp');
 
@@ -27,8 +24,9 @@ export class ExercisesService implements OnModuleInit {
   private readonly logger = new Logger(ExercisesService.name);
   private readonly translator: translate.Translate;
 
-  // Diccionario de traducciones personalizadas para palabras específicas
+  // Diccionario de traducciones personalizadas
   private readonly customTranslations: { [key: string]: string } = {
+    // Músculos
     back: 'Espalda',
     neck: 'Cuello',
     shoulders: 'Hombros',
@@ -40,7 +38,42 @@ export class ExercisesService implements OnModuleInit {
     'lower arms': 'Brazos inferiores',
     'upper legs': 'Piernas superiores',
     'lower legs': 'Piernas inferiores',
+    abs: 'Abdominales',
+    glutes: 'Glúteos',
+    hamstrings: 'Isquiotibiales',
+    quadriceps: 'Cuádriceps',
+    calves: 'Pantorrillas',
+    biceps: 'Bíceps',
+    triceps: 'Tríceps',
+    forearms: 'Antebrazos',
+    lats: 'Dorsales',
+    traps: 'Trapecios',
+    delts: 'Deltoides',
+    pecs: 'Pectorales',
+
+    // Equipamiento
+    barbell: 'Barra',
+    dumbbell: 'Mancuernas',
+    bodyweight: 'Peso corporal',
+    cable: 'Polea',
+    machine: 'Máquina',
+    kettlebell: 'Pesa rusa',
+    band: 'Banda elástica',
+    'resistance band': 'Banda de resistencia',
+    'ez bar': 'Barra Z',
+    'smith machine': 'Máquina Smith',
+    bench: 'Banco',
+
+    // Tipos de ejercicio
+    strength: 'Fuerza',
     cardio: 'Cardio',
+    stretching: 'Estiramiento',
+    plyometrics: 'Pliométricos',
+    powerlifting: 'Powerlifting',
+    olympic: 'Olímpico',
+    weightlifting: 'Halterofilia',
+    yoga: 'Yoga',
+    aerobic: 'Aeróbico',
   };
 
   constructor(
@@ -54,7 +87,6 @@ export class ExercisesService implements OnModuleInit {
     public exerciseTypeRepository: Repository<ExerciseTypeEntity>,
     private readonly httpService: HttpService,
   ) {
-    // Inicializa el traductor de Google Cloud
     this.translator = new translate.Translate({
       projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
       keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
@@ -62,79 +94,25 @@ export class ExercisesService implements OnModuleInit {
   }
 
   async onModuleInit() {
-    //await this.syncWithExerciseDB();
+    // Sincronizar datos al iniciar la aplicación (opcional)
+    /* await this.syncWithExerciseDB();
+    await this.syncBodyParts();
+    await this.syncEquipment();
+    await this.syncExerciseTypes(); */
   }
 
-  /**
-   * Capitaliza la primera letra de un texto
-   */
-  private capitalizeFirst(text: string): string {
-    if (!text) return text;
-    return text.charAt(0).toUpperCase() + text.slice(1);
+  // ==================== MÉTODOS PRINCIPALES ====================
+
+  async findAll(): Promise<ExerciseEntity[]> {
+    return this.exerciseRepository.find();
   }
 
-  /**
-   * Traduce un texto de inglés a español
-   */
-  private async translateToSpanish(text: string): Promise<string> {
-    if (!text) return text;
-
-    try {
-      // Verificar si existe una traducción personalizada
-      const lowerText = text.toLowerCase().trim();
-      if (this.customTranslations[lowerText]) {
-        return this.customTranslations[lowerText];
-      }
-
-      // Si no, usar Google Translate
-      const [translation] = await this.translator.translate(text, {
-        from: 'en',
-        to: 'es',
-      });
-
-      // Capitalizar la primera letra del resultado
-      return this.capitalizeFirst(translation);
-    } catch (error) {
-      this.logger.warn(`Error traduciendo "${text}": ${error.message}`);
-      return this.capitalizeFirst(text); // Devolver el texto original capitalizado si falla
-    }
-  }
-
-  /**
-   * Traduce un array de textos
-   */
-  private async translateArray(texts: string[]): Promise<string[]> {
-    if (!texts || texts.length === 0) return texts;
-
-    try {
-      // Procesar cada texto individualmente para usar traducciones personalizadas
-      const translations = await Promise.all(
-        texts.map(async text => {
-          const lowerText = text.toLowerCase().trim();
-
-          // Verificar si existe una traducción personalizada
-          if (this.customTranslations[lowerText]) {
-            return this.customTranslations[lowerText];
-          }
-
-          // Si no, usar Google Translate
-          try {
-            const [translation] = await this.translator.translate(text, {
-              from: 'en',
-              to: 'es',
-            });
-            return this.capitalizeFirst(translation);
-          } catch (error) {
-            return this.capitalizeFirst(text);
-          }
-        }),
-      );
-
-      return translations;
-    } catch (error) {
-      this.logger.warn(`Error traduciendo array: ${error.message}`);
-      return texts.map(t => this.capitalizeFirst(t));
-    }
+  async searchByName(name: string): Promise<ExerciseEntity[]> {
+    return this.exerciseRepository
+      .createQueryBuilder('exercise')
+      .where('LOWER(exercise.name) LIKE LOWER(:name)', { name: `%${name}%` })
+      .orderBy('exercise.name', 'ASC')
+      .getMany();
   }
 
   async findAllEquipment(): Promise<EquipmentEntity[]> {
@@ -152,39 +130,42 @@ export class ExercisesService implements OnModuleInit {
   async createCustom(dto: CreateExerciseDto & { imageBase64?: string }) {
     const { v4: uuidv4 } = await import('uuid');
 
-    // 1. Obtener nombres de Equipment
+    // Validar equipamiento
     const equipment = await this.equipmentRepository.findOne({
       where: { id: dto.equipment },
     });
-    if (!equipment)
+    if (!equipment) {
       throw new NotFoundException(`Equipo no encontrado: ${dto.equipment}`);
+    }
 
-    // 2. Obtener nombre del músculo primario
+    // Validar músculo principal
     const primaryMuscle = await this.muscleRepository.findOne({
       where: { id: dto.primaryMuscle },
     });
-    if (!primaryMuscle)
+    if (!primaryMuscle) {
       throw new NotFoundException(
         `Músculo no encontrado: ${dto.primaryMuscle}`,
       );
+    }
 
-    // 3. Obtener nombres de músculos secundarios
+    // Obtener músculos secundarios
     let secondaryMuscles: string[] = [];
     if (dto.otherMuscles && dto.otherMuscles.length > 0) {
       const found = await this.muscleRepository.findByIds(dto.otherMuscles);
       secondaryMuscles = found.map(m => m.name);
     }
 
-    // 4. Obtener tipo de ejercicio
+    // Validar tipo de ejercicio
     const exerciseType = await this.exerciseTypeRepository.findOne({
       where: { id: dto.type },
     });
-    if (!exerciseType)
+    if (!exerciseType) {
       throw new NotFoundException(
         `Tipo de ejercicio no encontrado: ${dto.type}`,
       );
+    }
 
-    // 5. Crear entidad con nombres en lugar de IDs
+    // Crear ejercicio
     const exercise = this.exerciseRepository.create({
       id: uuidv4(),
       name: dto.name,
@@ -201,49 +182,8 @@ export class ExercisesService implements OnModuleInit {
     return this.exerciseRepository.save(exercise);
   }
 
-  async findAll(): Promise<ExerciseEntity[]> {
-    return await this.exerciseRepository.find();
-  }
+  // ==================== SINCRONIZACIÓN CON EXERCISEDB ====================
 
-  async findOne(id: string): Promise<ExerciseEntity> {
-    const exercise = await this.exerciseRepository.findOne({ where: { id } });
-    if (!exercise) {
-      throw new NotFoundException(`Exercise with ID ${id} not found`);
-    }
-    return exercise;
-  }
-
-  async update(
-    id: string,
-    exerciseRequestDto: ExerciseRequestDto,
-  ): Promise<ExerciseEntity> {
-    const exercise = await this.findOne(id);
-    const updatedExercise = this.exerciseRepository.merge(
-      exercise,
-      exerciseRequestDto,
-    );
-
-    const savedExercise = await this.exerciseRepository.save(updatedExercise);
-    return savedExercise;
-  }
-
-  async remove(id: string): Promise<void> {
-    const exercise = await this.findOne(id);
-    await this.exerciseRepository.remove(exercise);
-  }
-
-  /**
-   * 🎉 Sincroniza con ExerciseDB usando la API oficial GRATUITA
-   *
-   * ✅ Ventajas:
-   * - Completamente gratuita
-   * - No requiere API Key
-   * - Más de 1300 ejercicios con imágenes, GIFs y videos
-   * - Sin límites de requests
-   *
-   * 📚 Documentación: https://www.exercisedb.dev/docs
-   * 🔗 Endpoint: https://www.exercisedb.dev/api/v1/exercises
-   */
   async syncWithExerciseDB(): Promise<{ message: string; count: number }> {
     try {
       this.logger.log(
@@ -407,37 +347,6 @@ export class ExercisesService implements OnModuleInit {
     }
   }
 
-  /**
-   * Busca ejercicios por nombre
-   */
-  async searchByName(name: string): Promise<ExerciseEntity[]> {
-    return this.exerciseRepository
-      .createQueryBuilder('exercise')
-      .where('LOWER(exercise.name) LIKE LOWER(:name)', { name: `%${name}%` })
-      .orderBy('exercise.name', 'ASC')
-      .getMany();
-  }
-
-  /**
-   * Mapea los datos de ExerciseDB v1 (API oficial gratuita) a la entidad local con traducción
-   *
-   * Estructura de datos de la API:
-   * {
-   *   "exerciseId": "K6NnTv0",
-   *   "name": "Bench Press",
-   *   "imageUrl": "Barbell-Bench-Press_Chest.png",
-   *   "gifUrl": "https://...",
-   *   "equipments": ["Barbell"],
-   *   "bodyParts": ["Chest"],
-   *   "exerciseType": "weight_reps",
-   *   "targetMuscles": ["Pectoralis Major Clavicular Head"],
-   *   "secondaryMuscles": ["Deltoid Anterior", ...],
-   *   "videoUrl": "Barbell-Bench-Press_Chest_.mp4",
-   *   "keywords": [...],
-   *   "overview": "The Bench Press is a classic...",
-   *   "instructions": [...]
-   * }
-   */
   private async mapToExerciseEntity(data: any): Promise<ExerciseEntity> {
     const { v4: uuidv4 } = await import('uuid');
     const entity = new ExerciseEntity();
@@ -536,9 +445,6 @@ export class ExercisesService implements OnModuleInit {
     return entity;
   }
 
-  /**
-   * Descarga y convierte la imagen/GIF a PNG
-   */
   private async downloadAndConvertImage(imageUrl: string): Promise<Buffer> {
     try {
       const response = await firstValueFrom(
@@ -563,43 +469,342 @@ export class ExercisesService implements OnModuleInit {
   }
 
   /**
-   * Método de importación desde JSON local (mantenido por compatibilidad)
+   * Traduce un array de textos
    */
-  async importFromJson() {
-    const data = fs.readFileSync('assets/exercises.json', 'utf8');
-    const items = JSON.parse(data);
+  private async translateArray(texts: string[]): Promise<string[]> {
+    if (!texts || texts.length === 0) return texts;
 
-    const entities = await Promise.all(
-      items.map(async (item: any) => {
-        const e = new ExerciseEntity();
-        e.id = item.exerciseId;
-        e.name = this.capitalizeFirst(item.name);
-        e.equipments = this.capitalizeArray(item.equipments);
-        e.bodyParts = this.capitalizeArray(item.bodyParts);
-        e.targetMuscles = this.capitalizeArray(item.targetMuscles);
-        e.secondaryMuscles = this.capitalizeArray(item.secondaryMuscles);
-        e.instructions = item.instructions;
-        e.giftUrl = item.gifUrl;
+    try {
+      // Procesar cada texto individualmente para usar traducciones personalizadas
+      const translations = await Promise.all(
+        texts.map(async text => {
+          const lowerText = text.toLowerCase().trim();
 
-        try {
-          const gifResponse = await axios.get(item.gifUrl, {
-            responseType: 'arraybuffer',
-          });
-          const pngBuffer = await sharp(gifResponse.data).png().toBuffer();
-          e.imageUrl = pngBuffer.toString('base64');
-        } catch (err) {
-          e.imageUrl = undefined;
-        }
+          // Verificar si existe una traducción personalizada
+          if (this.customTranslations[lowerText]) {
+            return this.customTranslations[lowerText];
+          }
 
-        return e;
-      }),
-    );
+          // Si no, usar Google Translate
+          try {
+            const [translation] = await this.translator.translate(text, {
+              from: 'en',
+              to: 'es',
+            });
+            return this.capitalizeFirst(translation);
+          } catch (error) {
+            return this.capitalizeFirst(text);
+          }
+        }),
+      );
 
-    await this.exerciseRepository.save(entities, { chunk: 100 });
+      return translations;
+    } catch (error) {
+      this.logger.warn(`Error traduciendo array: ${error.message}`);
+      return texts.map(t => this.capitalizeFirst(t));
+    }
   }
 
-  private capitalizeArray(arr: string[]): string[] {
-    if (!Array.isArray(arr)) return arr;
-    return arr.map(t => this.capitalizeFirst(t));
+  /**
+   * Capitaliza la primera letra de un texto
+   */
+  private capitalizeFirst(text: string): string {
+    if (!text) return text;
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  async syncBodyParts(): Promise<{ message: string; count: number }> {
+    try {
+      this.logger.log(
+        '🚀 Sincronizando partes del cuerpo desde ExerciseDB v2...',
+      );
+
+      const response = await firstValueFrom(
+        this.httpService.get('https://v2.exercisedb.dev/api/v1/bodyparts', {
+          timeout: 30000,
+        }),
+      );
+
+      if (!response.data.success || !response.data.data) {
+        throw new Error('Respuesta inválida de la API');
+      }
+
+      const bodyParts = response.data.data;
+      this.logger.log(`📊 Obtenidas ${bodyParts.length} partes del cuerpo`);
+
+      await this.muscleRepository.clear();
+
+      const batchSize = 5;
+      const entities: MuscleEntity[] = [];
+
+      for (let i = 0; i < bodyParts.length; i += batchSize) {
+        const batch = bodyParts.slice(i, i + batchSize);
+
+        const batchEntities = await Promise.all(
+          batch.map(async (item: any) => {
+            const { v4: uuidv4 } = await import('uuid');
+
+            // 🔥 Usar el mismo método de traducción que syncWithExerciseDB
+            const translatedName = await this.translateToSpanish(item.name);
+            this.logger.log(`✓ ${item.name} → ${translatedName}`);
+
+            let imageBase64: string | undefined;
+            if (item.imageUrl) {
+              try {
+                imageBase64 = await this.downloadAndConvertToBase64(
+                  item.imageUrl,
+                );
+              } catch (error) {
+                this.logger.warn(`⚠️ Error con imagen de ${item.name}`);
+              }
+            }
+
+            return this.muscleRepository.create({
+              id: uuidv4(),
+              name: translatedName, // ✅ Ahora usa traducción consistente
+              image: imageBase64,
+            });
+          }),
+        );
+
+        entities.push(...batchEntities);
+        this.logger.log(
+          `🔄 Procesado lote ${Math.floor(i / batchSize) + 1}/${Math.ceil(bodyParts.length / batchSize)}`,
+        );
+      }
+
+      await this.muscleRepository.save(entities);
+      this.logger.log(`✅ ${entities.length} partes del cuerpo sincronizadas`);
+
+      return {
+        message: `${entities.length} partes del cuerpo sincronizadas exitosamente`,
+        count: entities.length,
+      };
+    } catch (error) {
+      this.logger.error(
+        `❌ Error sincronizando partes del cuerpo: ${error.message}`,
+      );
+      throw error;
+    }
+  }
+
+  async syncEquipment(): Promise<{ message: string; count: number }> {
+    try {
+      this.logger.log('🚀 Sincronizando equipamiento desde ExerciseDB v2...');
+
+      const response = await firstValueFrom(
+        this.httpService.get('https://v2.exercisedb.dev/api/v1/equipments', {
+          timeout: 30000,
+        }),
+      );
+
+      if (!response.data.success || !response.data.data) {
+        throw new Error('Respuesta inválida de la API');
+      }
+
+      const equipments = response.data.data;
+      this.logger.log(`📊 Obtenidos ${equipments.length} equipamientos`);
+
+      await this.equipmentRepository.clear();
+
+      const batchSize = 5;
+      const entities: EquipmentEntity[] = [];
+
+      for (let i = 0; i < equipments.length; i += batchSize) {
+        const batch = equipments.slice(i, i + batchSize);
+
+        const batchEntities = await Promise.all(
+          batch.map(async (item: any) => {
+            const { v4: uuidv4 } = await import('uuid');
+
+            // 🔥 Usar el mismo método de traducción que syncWithExerciseDB
+            const translatedName = await this.translateToSpanish(item.name);
+            this.logger.log(`✓ ${item.name} → ${translatedName}`);
+
+            let imageBase64: string | undefined;
+            if (item.imageUrl) {
+              try {
+                imageBase64 = await this.downloadAndConvertToBase64(
+                  item.imageUrl,
+                );
+              } catch (error) {
+                this.logger.warn(`⚠️ Error con imagen de ${item.name}`);
+              }
+            }
+
+            return this.equipmentRepository.create({
+              id: uuidv4(),
+              name: translatedName, // ✅ Ahora usa traducción consistente
+              image: imageBase64,
+            });
+          }),
+        );
+
+        entities.push(...batchEntities);
+        this.logger.log(
+          `🔄 Procesado lote ${Math.floor(i / batchSize) + 1}/${Math.ceil(equipments.length / batchSize)}`,
+        );
+      }
+
+      await this.equipmentRepository.save(entities);
+      this.logger.log(`✅ ${entities.length} equipamientos sincronizados`);
+
+      return {
+        message: `${entities.length} equipamientos sincronizados exitosamente`,
+        count: entities.length,
+      };
+    } catch (error) {
+      this.logger.error(
+        `❌ Error sincronizando equipamiento: ${error.message}`,
+      );
+      throw error;
+    }
+  }
+
+  async syncExerciseTypes(): Promise<{ message: string; count: number }> {
+    try {
+      this.logger.log(
+        '🚀 Sincronizando tipos de ejercicio desde ExerciseDB v2...',
+      );
+
+      const response = await firstValueFrom(
+        this.httpService.get('https://v2.exercisedb.dev/api/v1/exercisetypes', {
+          timeout: 30000,
+        }),
+      );
+
+      if (!response.data.success || !response.data.data) {
+        throw new Error('Respuesta inválida de la API');
+      }
+
+      const exerciseTypes = response.data.data;
+      this.logger.log(
+        `📊 Obtenidos ${exerciseTypes.length} tipos de ejercicio`,
+      );
+
+      await this.exerciseTypeRepository.clear();
+
+      const batchSize = 5;
+      const entities: ExerciseTypeEntity[] = [];
+
+      for (let i = 0; i < exerciseTypes.length; i += batchSize) {
+        const batch = exerciseTypes.slice(i, i + batchSize);
+
+        const batchEntities = await Promise.all(
+          batch.map(async (item: any) => {
+            const { v4: uuidv4 } = await import('uuid');
+
+            // 🔥 Usar el mismo método de traducción que syncWithExerciseDB
+            const translatedName = await this.translateToSpanish(item.name);
+            this.logger.log(`✓ ${item.name} → ${translatedName}`);
+
+            let imageBase64: string | undefined;
+            if (item.imageUrl) {
+              try {
+                imageBase64 = await this.downloadAndConvertToBase64(
+                  item.imageUrl,
+                );
+              } catch (error) {
+                this.logger.warn(`⚠️ Error con imagen de ${item.name}`);
+              }
+            }
+
+            return this.exerciseTypeRepository.create({
+              id: uuidv4(),
+              name: translatedName, // ✅ Ahora usa traducción consistente
+              image: imageBase64,
+            });
+          }),
+        );
+
+        entities.push(...batchEntities);
+        this.logger.log(
+          `🔄 Procesado lote ${Math.floor(i / batchSize) + 1}/${Math.ceil(exerciseTypes.length / batchSize)}`,
+        );
+      }
+
+      await this.exerciseTypeRepository.save(entities);
+      this.logger.log(`✅ ${entities.length} tipos de ejercicio sincronizados`);
+
+      return {
+        message: `${entities.length} tipos de ejercicio sincronizados exitosamente`,
+        count: entities.length,
+      };
+    } catch (error) {
+      this.logger.error(
+        `❌ Error sincronizando tipos de ejercicio: ${error.message}`,
+      );
+      throw error;
+    }
+  }
+
+  // ==================== UTILIDADES ====================
+
+  /**
+   * Normaliza texto: primera letra mayúscula, resto minúscula
+   */
+  private normalizeText(text: string): string {
+    if (!text) return text;
+
+    // Convertir todo a minúsculas primero
+    const lowerText = text.toLowerCase();
+
+    // Capitalizar solo la primera letra
+    return lowerText.charAt(0).toUpperCase() + lowerText.slice(1);
+  }
+
+  /**
+   * Traduce texto de inglés a español con normalización
+   */
+  private async translateToSpanish(text: string): Promise<string> {
+    if (!text) return text;
+
+    try {
+      const lowerText = text.toLowerCase().trim();
+
+      // Verificar diccionario personalizado
+      if (this.customTranslations[lowerText]) {
+        return this.customTranslations[lowerText];
+      }
+
+      // Usar Google Translate
+      const [translation] = await this.translator.translate(text, {
+        from: 'en',
+        to: 'es',
+      });
+
+      // Normalizar: primera mayúscula, resto minúsculas
+      return this.normalizeText(translation);
+    } catch (error) {
+      this.logger.warn(`Error traduciendo "${text}": ${error.message}`);
+      return this.normalizeText(text);
+    }
+  }
+
+  /**
+   * Descarga imagen WebP y la convierte a PNG base64
+   */
+  private async downloadAndConvertToBase64(imageUrl: string): Promise<string> {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(imageUrl, {
+          responseType: 'arraybuffer',
+          timeout: 15000,
+        }),
+      );
+
+      const pngBuffer = await sharp(response.data)
+        .png()
+        .resize(200, 200, {
+          fit: 'contain',
+          background: { r: 255, g: 255, b: 255, alpha: 0 },
+        })
+        .toBuffer();
+
+      return pngBuffer.toString('base64');
+    } catch (error) {
+      this.logger.error(`Error descargando imagen: ${error.message}`);
+      throw error;
+    }
   }
 }

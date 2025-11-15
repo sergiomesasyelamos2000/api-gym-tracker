@@ -1,4 +1,3 @@
-// src/exercises/entities/equipment.entity.ts
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity()
@@ -6,9 +5,9 @@ export class EquipmentEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ unique: true })
+  @Column()
   name: string;
 
-  @Column({ nullable: true })
-  imagePath?: string;
+  @Column({ type: 'text', nullable: true })
+  image?: string;
 }

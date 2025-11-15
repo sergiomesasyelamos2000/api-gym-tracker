@@ -1,24 +1,12 @@
-import { CreateExerciseDto, ExerciseRequestDto } from '@app/entity-data-models';
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-  Put,
-  Query,
-} from '@nestjs/common';
+import { CreateExerciseDto } from '@app/entity-data-models';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ExercisesService } from './exercises.service';
 
 @Controller('exercises')
 export class ExercisesController {
   constructor(private readonly exercisesService: ExercisesService) {}
 
-  @Post()
-  async createCustom(@Body() dto: CreateExerciseDto) {
-    return this.exercisesService.createCustom(dto);
-  }
+  // ==================== ENDPOINTS PÚBLICOS ====================
 
   @Get()
   findAll() {
@@ -28,29 +16,6 @@ export class ExercisesController {
   @Get('search')
   searchByName(@Query('name') name: string) {
     return this.exercisesService.searchByName(name);
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.exercisesService.findOne(id);
-  }
-
-  @Put(':id')
-  update(
-    @Param('id') id: string,
-    @Body() exerciseRequestDto: ExerciseRequestDto,
-  ) {
-    return this.exercisesService.update(id, exerciseRequestDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.exercisesService.remove(id);
-  }
-
-  @Post('sync')
-  syncWithExerciseDB() {
-    return this.exercisesService.syncWithExerciseDB();
   }
 
   @Get('equipment/all')
@@ -66,5 +31,27 @@ export class ExercisesController {
   @Get('exercise-types/all')
   getExerciseTypes() {
     return this.exercisesService.findAllExerciseTypes();
+  }
+
+  @Post()
+  createCustom(@Body() dto: CreateExerciseDto) {
+    return this.exercisesService.createCustom(dto);
+  }
+
+  // ==================== ENDPOINTS DE SINCRONIZACIÓN ====================
+
+  @Post('sync/bodyparts')
+  syncBodyParts() {
+    return this.exercisesService.syncBodyParts();
+  }
+
+  @Post('sync/equipment')
+  syncEquipment() {
+    return this.exercisesService.syncEquipment();
+  }
+
+  @Post('sync/exercise-types')
+  syncExerciseTypes() {
+    return this.exercisesService.syncExerciseTypes();
   }
 }

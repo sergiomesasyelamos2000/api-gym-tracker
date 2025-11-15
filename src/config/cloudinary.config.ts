@@ -9,12 +9,6 @@ const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY;
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
 
-console.log('🔧 Cloudinary Direct Config:', {
-  cloud_name: CLOUDINARY_CLOUD_NAME || '❌ MISSING',
-  api_key: CLOUDINARY_API_KEY ? '✅ Present' : '❌ MISSING',
-  api_secret: CLOUDINARY_API_SECRET ? '✅ Present' : '❌ MISSING',
-});
-
 // Validar
 if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
   console.error('❌ Cloudinary credentials missing!');
@@ -33,7 +27,5 @@ cloudinary.config({
   api_secret: CLOUDINARY_API_SECRET,
   secure: true,
 });
-
-console.log('✅ Cloudinary configured successfully');
 
 export default cloudinary;

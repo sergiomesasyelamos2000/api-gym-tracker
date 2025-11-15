@@ -64,8 +64,6 @@ export class NutritionController {
       const pageNum = parseInt(page) || 1;
       const pageSizeNum = parseInt(pageSize) || 100;
 
-      console.log('GET products - page:', pageNum, 'pageSize:', pageSizeNum);
-
       const result = await this.nutritionService.getAllProducts(
         pageNum,
         pageSizeNum,
@@ -86,7 +84,6 @@ export class NutritionController {
   @Get('products/:code')
   async getProductDetail(@Param('code') code: string) {
     try {
-      console.log('GET product detail - code:', code);
       const product = await this.nutritionService.getProductDetail(code);
       return product;
     } catch (error) {

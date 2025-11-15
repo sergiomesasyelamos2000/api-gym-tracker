@@ -659,7 +659,6 @@ export class NutritionService {
       );
       const product = response.data.product;
 
-      console.log('product obtenidos:', product);
       // Mapeo de los campos principales
       const mappedProduct = {
         name: product.product_name ?? 'Producto sin nombre',
@@ -720,8 +719,6 @@ export class NutritionService {
       );
 
       const products = response.data.products || [];
-
-      console.log('Productos obtenidos:', page, pageSize, products.length);
 
       const mappedProducts = products
         .filter((product: any) => {
@@ -817,8 +814,6 @@ export class NutritionService {
           `Producto con código ${code} no encontrado`,
         );
       }
-
-      console.log('Product detail obtenido:', product.code);
 
       // Mapear el producto con la misma estructura que getAllProducts
       const mappedProduct = {
@@ -1073,8 +1068,6 @@ export class NutritionService {
       where: { userId, date },
       order: { createdAt: 'ASC' },
     });
-
-    console.log('userId', userId);
 
     // Get user profile for goals
     const profile = await this.userProfileRepo.findOne({

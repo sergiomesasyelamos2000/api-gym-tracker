@@ -1,12 +1,11 @@
-// src/seeds/data.seed.ts
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import {
   EquipmentEntity,
   ExerciseTypeEntity,
   MuscleEntity,
 } from '@app/entity-data-models';
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
 @Injectable()
 export class DataSeedService {
@@ -25,8 +24,6 @@ export class DataSeedService {
     await this.seedEquipment();
     await this.seedMuscles();
     await this.seedExerciseTypes();
-
-    console.log('✅ All seeds completed');
   }
 
   private async seedEquipment() {
@@ -60,8 +57,6 @@ export class DataSeedService {
       });
       if (!exists) await this.equipmentRepository.save(eq);
     }
-
-    console.log('✅ Equipment seed completed');
   }
 
   private async seedMuscles() {
@@ -94,8 +89,6 @@ export class DataSeedService {
       });
       if (!exists) await this.muscleRepository.save(m);
     }
-
-    console.log('✅ Muscle seed completed');
   }
 
   private async seedExerciseTypes() {
@@ -115,7 +108,5 @@ export class DataSeedService {
       });
       if (!exists) await this.exerciseTypeRepository.save(et);
     }
-
-    console.log('✅ ExerciseType seed completed');
   }
 }
