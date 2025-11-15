@@ -1107,6 +1107,7 @@ export class NutritionService {
   async updateFoodEntry(
     entryId: string,
     dto: UpdateFoodEntryDto,
+    userId: string,
   ): Promise<FoodEntryResponseDto> {
     const entry = await this.foodEntryRepo.findOne({
       where: { id: entryId },
@@ -1114,6 +1115,11 @@ export class NutritionService {
 
     if (!entry) {
       throw new NotFoundException(`Entrada no encontrada: ${entryId}`);
+    }
+
+    // Validate ownership
+    if (entry.userId !== userId) {
+      throw new NotFoundException('No tienes permiso para modificar esta entrada');
     }
 
     // Update fields
@@ -1133,12 +1139,21 @@ export class NutritionService {
     return this.mapFoodEntryToDto(updated);
   }
 
-  async deleteFoodEntry(entryId: string): Promise<void> {
-    const result = await this.foodEntryRepo.delete(entryId);
+  async deleteFoodEntry(entryId: string, userId: string): Promise<void> {
+    const entry = await this.foodEntryRepo.findOne({
+      where: { id: entryId },
+    });
 
-    if (result.affected === 0) {
+    if (!entry) {
       throw new NotFoundException(`Entrada no encontrada: ${entryId}`);
     }
+
+    // Validate ownership
+    if (entry.userId !== userId) {
+      throw new NotFoundException('No tienes permiso para eliminar esta entrada');
+    }
+
+    await this.foodEntryRepo.delete(entryId);
   }
 
   async getWeeklySummary(
@@ -1314,6 +1329,7 @@ export class NutritionService {
   async updateShoppingListItem(
     itemId: string,
     dto: UpdateShoppingListItemDto,
+    userId: string,
   ): Promise<ShoppingListItemResponseDto> {
     const item = await this.shoppingListRepo.findOne({
       where: { id: itemId },
@@ -1323,6 +1339,11 @@ export class NutritionService {
       throw new NotFoundException(
         `Item de lista de compras no encontrado: ${itemId}`,
       );
+    }
+
+    // Validate ownership
+    if (item.userId !== userId) {
+      throw new NotFoundException('No tienes permiso para modificar este item');
     }
 
     // Update fields if provided
@@ -1341,10 +1362,11 @@ export class NutritionService {
   /**
    * Toggle shopping list item purchased status
    * @param itemId - Shopping list item identifier
+   * @param userId - User identifier for validation
    * @returns Updated shopping list item
    * @throws NotFoundException if item not found
    */
-  async togglePurchased(itemId: string): Promise<ShoppingListItemResponseDto> {
+  async togglePurchased(itemId: string, userId: string): Promise<ShoppingListItemResponseDto> {
     const item = await this.shoppingListRepo.findOne({
       where: { id: itemId },
     });
@@ -1353,6 +1375,11 @@ export class NutritionService {
       throw new NotFoundException(
         `Item de lista de compras no encontrado: ${itemId}`,
       );
+    }
+
+    // Validate ownership
+    if (item.userId !== userId) {
+      throw new NotFoundException('No tienes permiso para modificar este item');
     }
 
     // Toggle the purchased status
@@ -1365,16 +1392,26 @@ export class NutritionService {
   /**
    * Delete a shopping list item
    * @param itemId - Shopping list item identifier
+   * @param userId - User identifier for validation
    * @throws NotFoundException if item not found
    */
-  async deleteShoppingListItem(itemId: string): Promise<void> {
-    const result = await this.shoppingListRepo.delete(itemId);
+  async deleteShoppingListItem(itemId: string, userId: string): Promise<void> {
+    const item = await this.shoppingListRepo.findOne({
+      where: { id: itemId },
+    });
 
-    if (result.affected === 0) {
+    if (!item) {
       throw new NotFoundException(
         `Item de lista de compras no encontrado: ${itemId}`,
       );
     }
+
+    // Validate ownership
+    if (item.userId !== userId) {
+      throw new NotFoundException('No tienes permiso para eliminar este item');
+    }
+
+    await this.shoppingListRepo.delete(itemId);
   }
 
   /**
@@ -1628,12 +1665,14 @@ export class NutritionService {
    * Update a custom product
    * @param productId - Custom product identifier
    * @param dto - Update data
+   * @param userId - User identifier for validation
    * @returns Updated custom product
    * @throws NotFoundException if product not found
    */
   async updateCustomProduct(
     productId: string,
     dto: UpdateCustomProductDto,
+    userId: string,
   ): Promise<CustomProductResponseDto> {
     const product = await this.customProductRepo.findOne({
       where: { id: productId },
@@ -1643,6 +1682,11 @@ export class NutritionService {
       throw new NotFoundException(
         `Producto personalizado no encontrado: ${productId}`,
       );
+    }
+
+    // Validate ownership
+    if (product.userId !== userId) {
+      throw new NotFoundException('No tienes permiso para modificar este producto');
     }
 
     // Si hay nueva imagen en base64, subirla
@@ -1785,12 +1829,14 @@ export class NutritionService {
    * Update a custom meal
    * @param mealId - Custom meal identifier
    * @param dto - Update data
+   * @param userId - User identifier for validation
    * @returns Updated custom meal
    * @throws NotFoundException if meal not found
    */
   async updateCustomMeal(
     mealId: string,
     dto: UpdateCustomMealDto,
+    userId: string,
   ): Promise<CustomMealResponseDto> {
     const meal = await this.customMealRepo.findOne({
       where: { id: mealId },
@@ -1800,6 +1846,11 @@ export class NutritionService {
       throw new NotFoundException(
         `Comida personalizada no encontrada: ${mealId}`,
       );
+    }
+
+    // Validate ownership
+    if (meal.userId !== userId) {
+      throw new NotFoundException('No tienes permiso para modificar esta comida');
     }
 
     // Si hay nueva imagen en base64, subirla
@@ -1858,13 +1909,13 @@ export class NutritionService {
   /**
    * Duplicate a custom meal (create a copy)
    * @param mealId - Custom meal identifier to duplicate
-   * @param newName - Optional new name for the duplicated meal
+   * @param userId - User identifier for validation
    * @returns Newly created custom meal
    * @throws NotFoundException if meal not found
    */
   async duplicateCustomMeal(
     mealId: string,
-    newName?: string,
+    userId: string,
   ): Promise<CustomMealResponseDto> {
     const originalMeal = await this.customMealRepo.findOne({
       where: { id: mealId },
@@ -1876,9 +1927,14 @@ export class NutritionService {
       );
     }
 
+    // Validate ownership
+    if (originalMeal.userId !== userId) {
+      throw new NotFoundException('No tienes permiso para duplicar esta comida');
+    }
+
     const duplicatedMeal = this.customMealRepo.create({
       userId: originalMeal.userId,
-      name: newName || `${originalMeal.name} (Copia)`,
+      name: `${originalMeal.name} (Copia)`,
       description: originalMeal.description,
       image: originalMeal.image,
       products: originalMeal.products,
@@ -2217,7 +2273,7 @@ export class NutritionService {
   }
 
   // Actualizar deleteCustomProduct para limpiar imágenes
-  async deleteCustomProduct(productId: string): Promise<void> {
+  async deleteCustomProduct(productId: string, userId: string): Promise<void> {
     const product = await this.customProductRepo.findOne({
       where: { id: productId },
     });
@@ -2226,6 +2282,11 @@ export class NutritionService {
       throw new NotFoundException(
         `Producto personalizado no encontrado: ${productId}`,
       );
+    }
+
+    // Validate ownership
+    if (product.userId !== userId) {
+      throw new NotFoundException('No tienes permiso para eliminar este producto');
     }
 
     // Eliminar imagen de Cloudinary si existe
@@ -2238,7 +2299,7 @@ export class NutritionService {
   }
 
   // Actualizar deleteCustomMeal para limpiar imágenes
-  async deleteCustomMeal(mealId: string): Promise<void> {
+  async deleteCustomMeal(mealId: string, userId: string): Promise<void> {
     const meal = await this.customMealRepo.findOne({
       where: { id: mealId },
     });
@@ -2247,6 +2308,11 @@ export class NutritionService {
       throw new NotFoundException(
         `Comida personalizada no encontrada: ${mealId}`,
       );
+    }
+
+    // Validate ownership
+    if (meal.userId !== userId) {
+      throw new NotFoundException('No tienes permiso para eliminar esta comida');
     }
 
     // Eliminar imagen de Cloudinary si existe
