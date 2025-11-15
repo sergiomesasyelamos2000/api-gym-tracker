@@ -10,6 +10,13 @@ import { ExerciseEntity } from './exercise.entity';
 import { RoutineEntity } from './routine.entity';
 import { SetEntity } from './set.entity';
 
+// 🔥 Nueva interfaz para las notas con timestamp
+export interface ExerciseNote {
+  id: string;
+  text: string;
+  createdAt: string; // ISO string
+}
+
 @Entity()
 export class RoutineExerciseEntity {
   @PrimaryGeneratedColumn('uuid')
@@ -33,12 +40,24 @@ export class RoutineExerciseEntity {
   })
   sets!: SetEntity[];
 
+  // 🔥 CAMBIO: De string a array de objetos JSON
   @ApiProperty({
-    example: 'Notas específicas para este ejercicio en esta rutina',
-    description: 'Notas específicas para el ejercicio en esta rutina',
+    example: [
+      {
+        id: 'uuid-1',
+        text: 'Primera nota del 10/10/2025',
+        createdAt: '2025-10-10T10:00:00.000Z',
+      },
+      {
+        id: 'uuid-2',
+        text: 'Segunda nota del 11/10/2025',
+        createdAt: '2025-10-11T14:30:00.000Z',
+      },
+    ],
+    description: 'Array de notas con timestamp para el ejercicio',
   })
-  @Column({ nullable: true })
-  notes?: string;
+  @Column({ type: 'jsonb', nullable: true, default: [] })
+  notes?: ExerciseNote[];
 
   @ApiProperty({
     example: '60',
