@@ -1,3 +1,4 @@
+export * from './user.entity';
 export * from './exercise.entity';
 export * from './routine.entity';
 export * from './set.entity';
