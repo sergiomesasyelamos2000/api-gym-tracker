@@ -6,7 +6,7 @@ import {
   JoinColumn,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { UserNutritionProfileEntity } from './user-nutrition-profile.entity';
+import { UserEntity } from './user.entity'; // ← CAMBIO: Referencia a UserEntity
 
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 export type FoodUnit = 'gram' | 'ml' | 'portion' | 'custom';
@@ -29,7 +29,7 @@ export class FoodEntryEntity {
   productImage?: string;
 
   @Column({ type: 'date' })
-  date!: string; // YYYY-MM-DD
+  date!: string;
 
   @Column({ type: 'enum', enum: ['breakfast', 'lunch', 'dinner', 'snack'] })
   mealType!: MealType;
@@ -46,7 +46,6 @@ export class FoodEntryEntity {
   @Column({ type: 'decimal', precision: 8, scale: 2, nullable: true })
   customUnitGrams?: number;
 
-  // Nutritional values (calculated based on quantity)
   @Column({ type: 'decimal', precision: 8, scale: 2 })
   calories!: number;
 
@@ -62,9 +61,8 @@ export class FoodEntryEntity {
   @CreateDateColumn()
   createdAt!: Date;
 
-  @ManyToOne(() => UserNutritionProfileEntity, profile => profile.foodEntries, {
-    onDelete: 'CASCADE',
-  })
-  @JoinColumn({ name: 'userId', referencedColumnName: 'userId' })
-  userProfile!: UserNutritionProfileEntity;
+  // ✅ CAMBIO: Relación directa con UserEntity
+  @ManyToOne(() => UserEntity, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'userId', referencedColumnName: 'id' })
+  user!: UserEntity;
 }

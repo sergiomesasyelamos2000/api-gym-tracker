@@ -2,19 +2,21 @@ import {
   Column,
   CreateDateColumn,
   Entity,
-  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
+  OneToOne,
+  JoinColumn,
 } from 'typeorm';
-import { FoodEntryEntity } from './food-entry.entity';
+import { UserEntity } from './user.entity';
 import { WeightUnit } from './set.entity';
 
 export type ActivityLevel =
   | 'sedentary'
-  | 'light'
-  | 'moderate'
-  | 'active'
-  | 'very_active';
+  | 'lightly_active'
+  | 'moderately_active'
+  | 'very_active'
+  | 'extra_active';
+
 export type Gender = 'male' | 'female' | 'other';
 export type WeightGoal = 'lose' | 'maintain' | 'gain';
 export type HeightUnit = 'cm' | 'ft';
@@ -26,6 +28,11 @@ export class UserNutritionProfileEntity {
 
   @Column({ unique: true })
   userId!: string;
+
+  // ✅ Relación OneToOne con UserEntity (opcional, para navegación)
+  @OneToOne(() => UserEntity, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'userId', referencedColumnName: 'id' })
+  user!: UserEntity;
 
   // Anthropometrics
   @Column({ type: 'decimal', precision: 5, scale: 2 })
@@ -42,7 +49,13 @@ export class UserNutritionProfileEntity {
 
   @Column({
     type: 'enum',
-    enum: ['sedentary', 'light', 'moderate', 'active', 'very_active'],
+    enum: [
+      'sedentary',
+      'lightly_active',
+      'moderately_active',
+      'very_active',
+      'extra_active',
+    ],
   })
   activityLevel!: ActivityLevel;
 
@@ -54,7 +67,7 @@ export class UserNutritionProfileEntity {
   targetWeight!: number;
 
   @Column({ type: 'decimal', precision: 3, scale: 2 })
-  weeklyWeightChange!: number; // kg per week
+  weeklyWeightChange!: number;
 
   // Macro Goals
   @Column({ type: 'int' })
@@ -81,7 +94,4 @@ export class UserNutritionProfileEntity {
 
   @UpdateDateColumn()
   updatedAt!: Date;
-
-  @OneToMany(() => FoodEntryEntity, foodEntry => foodEntry.userProfile)
-  foodEntries!: FoodEntryEntity[];
 }

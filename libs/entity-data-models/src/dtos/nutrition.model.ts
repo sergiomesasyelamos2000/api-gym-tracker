@@ -7,33 +7,33 @@ import {
 } from '../entities/user-nutrition-profile.entity';
 
 // User Nutrition Profile DTOs
-export interface CreateUserNutritionProfileDto {
-  userId: string;
-  anthropometrics: {
+export class CreateUserNutritionProfileDto {
+  userId!: string;
+  anthropometrics!: {
     weight: number;
     height: number;
     age: number;
     gender: Gender;
     activityLevel: ActivityLevel;
   };
-  goals: {
+  goals!: {
     weightGoal: WeightGoal;
     targetWeight: number;
     weeklyWeightChange: number;
   };
-  macroGoals: {
+  macroGoals!: {
     dailyCalories: number;
     protein: number;
     carbs: number;
     fat: number;
   };
-  preferences: {
+  preferences!: {
     weightUnit: WeightUnit;
     heightUnit: HeightUnit;
   };
 }
 
-export interface UpdateUserNutritionProfileDto {
+export class UpdateUserNutritionProfileDto {
   anthropometrics?: {
     weight?: number;
     height?: number;
@@ -58,40 +58,40 @@ export interface UpdateUserNutritionProfileDto {
   };
 }
 
-export interface UpdateMacroGoalsDto {
-  dailyCalories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
+export class UpdateMacroGoalsDto {
+  dailyCalories!: number;
+  protein!: number;
+  carbs!: number;
+  fat!: number;
 }
 
-export interface UserNutritionProfileResponseDto {
-  id: string;
-  userId: string;
-  anthropometrics: {
+export class UserNutritionProfileResponseDto {
+  id!: string;
+  userId!: string;
+  anthropometrics!: {
     weight: number;
     height: number;
     age: number;
-    gender: Gender;
-    activityLevel: ActivityLevel;
+    gender: Gender; // ← Cambio de string a Gender
+    activityLevel: ActivityLevel; // ← Cambio de string a ActivityLevel
   };
-  goals: {
-    weightGoal: WeightGoal;
+  goals!: {
+    weightGoal: WeightGoal; // ← Cambio de string a WeightGoal
     targetWeight: number;
     weeklyWeightChange: number;
   };
-  macroGoals: {
+  macroGoals!: {
     dailyCalories: number;
     protein: number;
     carbs: number;
     fat: number;
   };
-  preferences: {
+  preferences!: {
     weightUnit: WeightUnit;
     heightUnit: HeightUnit;
   };
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt!: Date;
+  updatedAt!: Date;
 }
 
 // Food Entry DTOs
@@ -144,19 +144,21 @@ export interface FoodEntryResponseDto {
 }
 
 // Daily Summary DTOs
-export interface DailyNutritionSummaryDto {
-  date: string;
-  entries: FoodEntryResponseDto[];
-  totals: {
+// daily-nutrition-summary.dto.ts
+export class DailyNutritionSummaryDto {
+  date!: string;
+  entries!: FoodEntryResponseDto[];
+  totals!: {
     calories: number;
     protein: number;
     carbs: number;
     fat: number;
   };
-  goals: {
+  goals!: {
     dailyCalories: number;
     protein: number;
     carbs: number;
     fat: number;
   };
+  hasProfile!: boolean;
 }
