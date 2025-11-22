@@ -1109,44 +1109,52 @@ export class NutritionService {
     userId: string,
     date: string,
   ): Promise<DailyNutritionSummaryDto> {
-    // ✅ CORRECCIÓN: Asegurarse de que los parámetros están en el orden correcto
+    // ✅ Buscar entradas por userId directamente
     const entries = await this.foodEntryRepo.find({
       where: {
-        userId: userId, // ← userId primero
-        date: date, // ← date segundo
+        userId: userId,
+        date: date,
       },
       order: { createdAt: 'ASC' },
     });
 
-    // Get user profile for goals
+    // ✅ Buscar o crear perfil de nutrición
     let profile = await this.userProfileRepo.findOne({
       where: { userId },
     });
 
-    // If profile doesn't exist, create a default one
+    // ✅ Si no existe perfil, devolver valores por defecto sin guardar
     if (!profile) {
-      profile = this.userProfileRepo.create({
-        userId,
-        weight: 70,
-        height: 170,
-        age: 30,
-        gender: 'other',
-        activityLevel: 'moderately_active',
-        weightGoal: 'maintain',
-        targetWeight: 70,
-        weeklyWeightChange: 0,
-        dailyCalories: 2000,
-        proteinGrams: 150,
-        carbsGrams: 200,
-        fatGrams: 65,
-        weightUnit: 'kg',
-        heightUnit: 'cm',
-      });
-      profile = await this.userProfileRepo.save(profile);
+      return {
+        date,
+        entries: entries.map(e => this.mapFoodEntryToDto(e)),
+        totals: this.calculateTotals(entries),
+        goals: {
+          dailyCalories: 2000,
+          protein: 150,
+          carbs: 200,
+          fat: 65,
+        },
+        hasProfile: false, // ← Nuevo flag
+      };
     }
 
-    // Calculate totals
-    const totals = entries.reduce(
+    return {
+      date,
+      entries: entries.map(e => this.mapFoodEntryToDto(e)),
+      totals: this.calculateTotals(entries),
+      goals: {
+        dailyCalories: profile.dailyCalories,
+        protein: Number(profile.proteinGrams),
+        carbs: Number(profile.carbsGrams),
+        fat: Number(profile.fatGrams),
+      },
+      hasProfile: true,
+    };
+  }
+
+  private calculateTotals(entries: FoodEntryEntity[]) {
+    return entries.reduce(
       (acc, entry) => ({
         calories: acc.calories + Number(entry.calories),
         protein: acc.protein + Number(entry.protein),
@@ -1155,18 +1163,6 @@ export class NutritionService {
       }),
       { calories: 0, protein: 0, carbs: 0, fat: 0 },
     );
-
-    return {
-      date,
-      entries: entries.map(e => this.mapFoodEntryToDto(e)),
-      totals,
-      goals: {
-        dailyCalories: profile.dailyCalories,
-        protein: Number(profile.proteinGrams),
-        carbs: Number(profile.carbsGrams),
-        fat: Number(profile.fatGrams),
-      },
-    };
   }
 
   async updateFoodEntry(
