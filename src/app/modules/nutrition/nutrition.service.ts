@@ -946,6 +946,7 @@ export class NutritionService {
       throw new Error('El perfil de usuario ya existe');
     }
 
+    // Create profile with initial data
     const profile = this.userProfileRepo.create({
       userId: dto.userId,
       weight: dto.anthropometrics.weight,
@@ -963,6 +964,21 @@ export class NutritionService {
       weightUnit: dto.preferences.weightUnit,
       heightUnit: dto.preferences.heightUnit,
     });
+
+    // If macros are not provided or are default values, calculate them automatically
+    const hasDefaultMacros =
+      dto.macroGoals.dailyCalories === 2000 &&
+      dto.macroGoals.protein === 150 &&
+      dto.macroGoals.carbs === 200 &&
+      dto.macroGoals.fat === 65;
+
+    if (hasDefaultMacros) {
+      const calculatedMacros = this.recalculateAllMacros(profile);
+      profile.dailyCalories = calculatedMacros.dailyCalories;
+      profile.proteinGrams = calculatedMacros.protein;
+      profile.carbsGrams = calculatedMacros.carbs;
+      profile.fatGrams = calculatedMacros.fat;
+    }
 
     const saved = await this.userProfileRepo.save(profile);
     return this.mapProfileToDto(saved);
@@ -982,31 +998,49 @@ export class NutritionService {
       );
     }
 
+    // Track if anthropometric or goal data changed (affects macro calculation)
+    let shouldRecalculateMacros = false;
+
     // Update anthropometrics if provided
     if (dto.anthropometrics) {
-      if (dto.anthropometrics.weight !== undefined)
+      if (dto.anthropometrics.weight !== undefined) {
         profile.weight = dto.anthropometrics.weight;
-      if (dto.anthropometrics.height !== undefined)
+        shouldRecalculateMacros = true;
+      }
+      if (dto.anthropometrics.height !== undefined) {
         profile.height = dto.anthropometrics.height;
-      if (dto.anthropometrics.age !== undefined)
+        shouldRecalculateMacros = true;
+      }
+      if (dto.anthropometrics.age !== undefined) {
         profile.age = dto.anthropometrics.age;
-      if (dto.anthropometrics.gender !== undefined)
+        shouldRecalculateMacros = true;
+      }
+      if (dto.anthropometrics.gender !== undefined) {
         profile.gender = dto.anthropometrics.gender;
-      if (dto.anthropometrics.activityLevel !== undefined)
+        shouldRecalculateMacros = true;
+      }
+      if (dto.anthropometrics.activityLevel !== undefined) {
         profile.activityLevel = dto.anthropometrics.activityLevel;
+        shouldRecalculateMacros = true;
+      }
     }
 
     // Update goals if provided
     if (dto.goals) {
-      if (dto.goals.weightGoal !== undefined)
+      if (dto.goals.weightGoal !== undefined) {
         profile.weightGoal = dto.goals.weightGoal;
-      if (dto.goals.targetWeight !== undefined)
+        shouldRecalculateMacros = true;
+      }
+      if (dto.goals.targetWeight !== undefined) {
         profile.targetWeight = dto.goals.targetWeight;
-      if (dto.goals.weeklyWeightChange !== undefined)
+      }
+      if (dto.goals.weeklyWeightChange !== undefined) {
         profile.weeklyWeightChange = dto.goals.weeklyWeightChange;
+        shouldRecalculateMacros = true;
+      }
     }
 
-    // Update macro goals if provided
+    // Update macro goals if provided (manual override, don't recalculate)
     if (dto.macroGoals) {
       if (dto.macroGoals.dailyCalories !== undefined)
         profile.dailyCalories = dto.macroGoals.dailyCalories;
@@ -1016,6 +1050,7 @@ export class NutritionService {
         profile.carbsGrams = dto.macroGoals.carbs;
       if (dto.macroGoals.fat !== undefined)
         profile.fatGrams = dto.macroGoals.fat;
+      shouldRecalculateMacros = false; // Manual macro override takes precedence
     }
 
     // Update preferences if provided
@@ -1024,6 +1059,15 @@ export class NutritionService {
         profile.weightUnit = dto.preferences.weightUnit;
       if (dto.preferences.heightUnit !== undefined)
         profile.heightUnit = dto.preferences.heightUnit;
+    }
+
+    // Recalculate macros if anthropometric data or goals changed and no manual override
+    if (shouldRecalculateMacros) {
+      const calculatedMacros = this.recalculateAllMacros(profile);
+      profile.dailyCalories = calculatedMacros.dailyCalories;
+      profile.proteinGrams = calculatedMacros.protein;
+      profile.carbsGrams = calculatedMacros.carbs;
+      profile.fatGrams = calculatedMacros.fat;
     }
 
     const updated = await this.userProfileRepo.save(profile);
@@ -1075,14 +1119,30 @@ export class NutritionService {
     });
 
     // Get user profile for goals
-    const profile = await this.userProfileRepo.findOne({
+    let profile = await this.userProfileRepo.findOne({
       where: { userId },
     });
 
+    // If profile doesn't exist, create a default one
     if (!profile) {
-      throw new NotFoundException(
-        `Perfil no encontrado para userId: ${userId}`,
-      );
+      profile = this.userProfileRepo.create({
+        userId,
+        weight: 70,
+        height: 170,
+        age: 30,
+        gender: 'other',
+        activityLevel: 'moderately_active',
+        weightGoal: 'maintain',
+        targetWeight: 70,
+        weeklyWeightChange: 0,
+        dailyCalories: 2000,
+        proteinGrams: 150,
+        carbsGrams: 200,
+        fatGrams: 65,
+        weightUnit: 'kg',
+        heightUnit: 'cm',
+      });
+      profile = await this.userProfileRepo.save(profile);
     }
 
     // Calculate totals
@@ -1207,6 +1267,168 @@ export class NutritionService {
   }
 
   // ==================== HELPER METHODS ====================
+
+  /**
+   * Calculate BMR (Basal Metabolic Rate) using Mifflin-St Jeor Equation
+   * @param weight - Weight in kg
+   * @param height - Height in cm
+   * @param age - Age in years
+   * @param gender - Gender (male/female/other)
+   * @returns BMR in calories
+   */
+  private calculateBMR(
+    weight: number,
+    height: number,
+    age: number,
+    gender: string,
+  ): number {
+    // Mifflin-St Jeor Equation
+    // Men: (10 × weight in kg) + (6.25 × height in cm) - (5 × age in years) + 5
+    // Women: (10 × weight in kg) + (6.25 × height in cm) - (5 × age in years) - 161
+    // Other: Average of both
+    const baseBMR = 10 * weight + 6.25 * height - 5 * age;
+
+    switch (gender.toLowerCase()) {
+      case 'male':
+        return baseBMR + 5;
+      case 'female':
+        return baseBMR - 161;
+      default:
+        return baseBMR - 78; // Average of male and female
+    }
+  }
+
+  /**
+   * Calculate TDEE (Total Daily Energy Expenditure)
+   * @param bmr - Basal Metabolic Rate
+   * @param activityLevel - Activity level
+   * @returns TDEE in calories
+   */
+  private calculateTDEE(bmr: number, activityLevel: string): number {
+    const activityMultipliers: Record<string, number> = {
+      sedentary: 1.2,
+      lightly_active: 1.375,
+      moderately_active: 1.55,
+      very_active: 1.725,
+      extra_active: 1.9,
+    };
+
+    const multiplier = activityMultipliers[activityLevel] || 1.55;
+    return bmr * multiplier;
+  }
+
+  /**
+   * Calculate daily calorie goal based on weight goal
+   * @param tdee - Total Daily Energy Expenditure
+   * @param weightGoal - Weight goal (lose/gain/maintain)
+   * @param weeklyWeightChange - Weekly weight change in kg
+   * @returns Adjusted daily calories
+   */
+  private calculateDailyCalories(
+    tdee: number,
+    weightGoal: string,
+    weeklyWeightChange: number,
+  ): number {
+    // 1 kg of fat = approximately 7700 calories
+    // Weekly deficit/surplus needed
+    const weeklyCalorieChange = weeklyWeightChange * 7700;
+    const dailyCalorieChange = weeklyCalorieChange / 7;
+
+    switch (weightGoal.toLowerCase()) {
+      case 'lose':
+        return Math.round(tdee - Math.abs(dailyCalorieChange));
+      case 'gain':
+        return Math.round(tdee + Math.abs(dailyCalorieChange));
+      default: // maintain
+        return Math.round(tdee);
+    }
+  }
+
+  /**
+   * Calculate macro distribution
+   * @param dailyCalories - Daily calorie goal
+   * @param weight - Weight in kg
+   * @param weightGoal - Weight goal (lose/gain/maintain)
+   * @returns Object with protein, carbs, and fat in grams
+   */
+  private calculateMacros(
+    dailyCalories: number,
+    weight: number,
+    weightGoal: string,
+  ): {
+    protein: number;
+    carbs: number;
+    fat: number;
+  } {
+    // Protein: 1.8-2.2g per kg for muscle gain/maintenance, 2.0-2.4g per kg for fat loss
+    let proteinGramsPerKg = 2.0;
+    if (weightGoal === 'lose') {
+      proteinGramsPerKg = 2.2;
+    } else if (weightGoal === 'gain') {
+      proteinGramsPerKg = 2.0;
+    }
+
+    const protein = Math.round(weight * proteinGramsPerKg);
+    const proteinCalories = protein * 4; // 4 calories per gram of protein
+
+    // Fat: 25-30% of total calories
+    const fatCalories = dailyCalories * 0.275; // 27.5% average
+    const fat = Math.round(fatCalories / 9); // 9 calories per gram of fat
+
+    // Carbs: Remaining calories
+    const carbCalories = dailyCalories - proteinCalories - fatCalories;
+    const carbs = Math.round(carbCalories / 4); // 4 calories per gram of carbs
+
+    return {
+      protein,
+      carbs: Math.max(0, carbs), // Ensure non-negative
+      fat,
+    };
+  }
+
+  /**
+   * Recalculate all macros based on anthropometric data
+   * @param profile - User nutrition profile
+   * @returns Updated macro values
+   */
+  private recalculateAllMacros(profile: UserNutritionProfileEntity): {
+    dailyCalories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+  } {
+    // Calculate BMR
+    const bmr = this.calculateBMR(
+      Number(profile.weight),
+      Number(profile.height),
+      profile.age,
+      profile.gender,
+    );
+
+    // Calculate TDEE
+    const tdee = this.calculateTDEE(bmr, profile.activityLevel);
+
+    // Calculate daily calories based on goal
+    const dailyCalories = this.calculateDailyCalories(
+      tdee,
+      profile.weightGoal,
+      Number(profile.weeklyWeightChange),
+    );
+
+    // Calculate macros
+    const macros = this.calculateMacros(
+      dailyCalories,
+      Number(profile.weight),
+      profile.weightGoal,
+    );
+
+    return {
+      dailyCalories,
+      protein: macros.protein,
+      carbs: macros.carbs,
+      fat: macros.fat,
+    };
+  }
 
   private mapProfileToDto(
     profile: UserNutritionProfileEntity,
