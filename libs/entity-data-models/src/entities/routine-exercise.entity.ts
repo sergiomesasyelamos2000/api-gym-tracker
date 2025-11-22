@@ -10,11 +10,10 @@ import { ExerciseEntity } from './exercise.entity';
 import { RoutineEntity } from './routine.entity';
 import { SetEntity } from './set.entity';
 
-// 🔥 Nueva interfaz para las notas con timestamp
 export interface ExerciseNote {
   id: string;
   text: string;
-  createdAt: string; // ISO string
+  createdAt: string;
 }
 
 @Entity()
