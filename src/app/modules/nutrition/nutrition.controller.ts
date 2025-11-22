@@ -1,33 +1,43 @@
 import {
+  CreateCustomMealDto,
+  CreateCustomProductDto,
+  CreateFavoriteProductDto,
+  CreateFoodEntryDto,
+  CreateShoppingListItemDto,
+  CreateUserNutritionProfileDto,
+  UpdateCustomMealDto,
+  UpdateCustomProductDto,
+  UpdateFoodEntryDto,
+  UpdateMacroGoalsDto,
+  UpdateShoppingListItemDto,
+  UpdateUserNutritionProfileDto,
+} from '@app/entity-data-models';
+import {
   Body,
   Controller,
+  Delete,
   Get,
+  Param,
   Post,
   Put,
-  Delete,
-  Param,
   Query,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { NutritionService } from './nutrition.service';
+import { ApiBearerAuth } from '@nestjs/swagger';
 import {
-  CreateUserNutritionProfileDto,
-  UpdateUserNutritionProfileDto,
-  UpdateMacroGoalsDto,
-  CreateFoodEntryDto,
-  UpdateFoodEntryDto,
-  CreateShoppingListItemDto,
-  UpdateShoppingListItemDto,
-  CreateFavoriteProductDto,
-  CreateCustomProductDto,
-  UpdateCustomProductDto,
-  CreateCustomMealDto,
-  UpdateCustomMealDto,
-} from '@app/entity-data-models';
+  CurrentUser,
+  CurrentUserData,
+} from '../auth/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { NutritionService } from './nutrition.service';
+import { log } from 'console';
 
 @Controller('nutrition')
+@UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 export class NutritionController {
   constructor(private nutritionService: NutritionService) {}
 
@@ -69,10 +79,9 @@ export class NutritionController {
         pageSizeNum,
       );
 
-      return result; // Ya retorna { products: [], total: number }
+      return result;
     } catch (error) {
       console.error('Error en controller getAllProducts:', error);
-      // Retornar estructura válida en caso de error
       return {
         products: [],
         total: 0,
@@ -80,7 +89,6 @@ export class NutritionController {
     }
   }
 
-  // nutrition.controller.ts
   @Get('products/:code')
   async getProductDetail(@Param('code') code: string) {
     try {
@@ -103,7 +111,7 @@ export class NutritionController {
   async createUserProfile(@Body() dto: CreateUserNutritionProfileDto) {
     try {
       const profile = await this.nutritionService.createUserProfile(dto);
-      return profile; // Ya devuelve el formato correcto gracias a mapProfileToDto
+      return profile;
     } catch (error) {
       throw error;
     }
@@ -144,13 +152,17 @@ export class NutritionController {
   async updateFoodEntry(
     @Param('entryId') entryId: string,
     @Body() dto: UpdateFoodEntryDto,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.updateFoodEntry(entryId, dto);
+    return this.nutritionService.updateFoodEntry(entryId, dto, user.id);
   }
 
   @Delete('diary/:entryId')
-  async deleteFoodEntry(@Param('entryId') entryId: string) {
-    return this.nutritionService.deleteFoodEntry(entryId);
+  async deleteFoodEntry(
+    @Param('entryId') entryId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.deleteFoodEntry(entryId, user.id);
   }
 
   @Get('diary/:userId/weekly')
@@ -186,18 +198,25 @@ export class NutritionController {
   async updateShoppingListItem(
     @Param('itemId') itemId: string,
     @Body() dto: UpdateShoppingListItemDto,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.updateShoppingListItem(itemId, dto);
+    return this.nutritionService.updateShoppingListItem(itemId, dto, user.id);
   }
 
   @Put('shopping-list/:itemId/toggle')
-  async togglePurchased(@Param('itemId') itemId: string) {
-    return this.nutritionService.togglePurchased(itemId);
+  async togglePurchased(
+    @Param('itemId') itemId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.togglePurchased(itemId, user.id);
   }
 
   @Delete('shopping-list/:itemId')
-  async deleteShoppingListItem(@Param('itemId') itemId: string) {
-    return this.nutritionService.deleteShoppingListItem(itemId);
+  async deleteShoppingListItem(
+    @Param('itemId') itemId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.deleteShoppingListItem(itemId, user.id);
   }
 
   @Delete('shopping-list/:userId/purchased')
@@ -273,13 +292,17 @@ export class NutritionController {
   async updateCustomProduct(
     @Param('productId') productId: string,
     @Body() dto: UpdateCustomProductDto,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.updateCustomProduct(productId, dto);
+    return this.nutritionService.updateCustomProduct(productId, dto, user.id);
   }
 
   @Delete('custom-products/:productId')
-  async deleteCustomProduct(@Param('productId') productId: string) {
-    return this.nutritionService.deleteCustomProduct(productId);
+  async deleteCustomProduct(
+    @Param('productId') productId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.deleteCustomProduct(productId, user.id);
   }
 
   @Get('custom-products/:userId/search')
@@ -314,18 +337,25 @@ export class NutritionController {
   async updateCustomMeal(
     @Param('mealId') mealId: string,
     @Body() dto: UpdateCustomMealDto,
+    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.updateCustomMeal(mealId, dto);
+    return this.nutritionService.updateCustomMeal(mealId, dto, user.id);
   }
 
   @Delete('custom-meals/:mealId')
-  async deleteCustomMeal(@Param('mealId') mealId: string) {
-    return this.nutritionService.deleteCustomMeal(mealId);
+  async deleteCustomMeal(
+    @Param('mealId') mealId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.deleteCustomMeal(mealId, user.id);
   }
 
   @Post('custom-meals/:mealId/duplicate')
-  async duplicateCustomMeal(@Param('mealId') mealId: string) {
-    return this.nutritionService.duplicateCustomMeal(mealId);
+  async duplicateCustomMeal(
+    @Param('mealId') mealId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.nutritionService.duplicateCustomMeal(mealId, user.id);
   }
 
   @Get('custom-meals/:userId/search')

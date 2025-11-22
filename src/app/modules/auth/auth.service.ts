@@ -1,4 +1,9 @@
-import { Injectable, UnauthorizedException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -61,7 +66,9 @@ export class AuthService {
     const { email, password, name } = userData;
 
     // Check if user already exists
-    const existingUser = await this.userRepository.findOne({ where: { email } });
+    const existingUser = await this.userRepository.findOne({
+      where: { email },
+    });
 
     if (existingUser) {
       throw new ConflictException('User with this email already exists');
@@ -99,10 +106,7 @@ export class AuthService {
 
     // Try to find existing user by Google ID or email
     let user = await this.userRepository.findOne({
-      where: [
-        { googleId: userInfo.id },
-        { email: userInfo.email },
-      ],
+      where: [{ googleId: userInfo.id }, { email: userInfo.email }],
     });
 
     if (user) {
@@ -144,7 +148,7 @@ export class AuthService {
 
   async logout(userId: string): Promise<void> {
     // Remove refresh token from database
-    await this.userRepository.update(userId, { refreshToken: null });
+    await this.userRepository.update(userId, { refreshToken: undefined });
   }
 
   // ==================== REFRESH TOKEN ====================
@@ -271,7 +275,10 @@ export class AuthService {
   }
 
   // Legacy method for Google token validation - kept for backward compatibility
-  async validateGoogleAccessToken(accessToken: string, userInfo: any): Promise<any> {
+  async validateGoogleAccessToken(
+    accessToken: string,
+    userInfo: any,
+  ): Promise<any> {
     // This is now handled by googleAuth method
     return this.googleAuth({ accessToken, userInfo });
   }

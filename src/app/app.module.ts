@@ -13,6 +13,7 @@ import {
   RoutineSessionEntity,
   SetEntity,
   ShoppingListItemEntity,
+  UserEntity,
   UserNutritionProfileEntity,
 } from '@app/entity-data-models';
 import { Module, OnApplicationBootstrap } from '@nestjs/common';
@@ -27,6 +28,7 @@ import { ExercisesModule } from './modules/exercises/exercises.module';
 import { NutritionModule } from './modules/nutrition/nutrition.module';
 import { RoutineModule } from './modules/routine/routine.module';
 import { PopulateModule } from './services/populate.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
   imports: [
@@ -61,6 +63,7 @@ import { PopulateModule } from './services/populate.module';
         FavoriteProductEntity,
         CustomProductEntity,
         CustomMealEntity,
+        UserEntity,
       ],
       synchronize: true,
     }),
@@ -69,6 +72,7 @@ import { PopulateModule } from './services/populate.module';
     RoutineModule,
     NutritionModule,
     PopulateModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],

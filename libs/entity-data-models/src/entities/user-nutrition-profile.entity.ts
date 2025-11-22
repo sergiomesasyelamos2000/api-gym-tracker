@@ -1,23 +1,14 @@
+// user-nutrition-profile.entity.ts
 import {
   Column,
   CreateDateColumn,
   Entity,
-  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
+  OneToOne,
+  JoinColumn,
 } from 'typeorm';
-import { FoodEntryEntity } from './food-entry.entity';
-import { WeightUnit } from './set.entity';
-
-export type ActivityLevel =
-  | 'sedentary'
-  | 'light'
-  | 'moderate'
-  | 'active'
-  | 'very_active';
-export type Gender = 'male' | 'female' | 'other';
-export type WeightGoal = 'lose' | 'maintain' | 'gain';
-export type HeightUnit = 'cm' | 'ft';
+import { UserEntity } from './user.entity';
 
 @Entity('user_nutrition_profiles')
 export class UserNutritionProfileEntity {
@@ -27,6 +18,10 @@ export class UserNutritionProfileEntity {
   @Column({ unique: true })
   userId!: string;
 
+  @OneToOne(() => UserEntity)
+  @JoinColumn({ name: 'userId' })
+  user!: UserEntity;
+
   // Anthropometrics
   @Column({ type: 'decimal', precision: 5, scale: 2 })
   weight!: number;
@@ -34,30 +29,27 @@ export class UserNutritionProfileEntity {
   @Column({ type: 'decimal', precision: 5, scale: 2 })
   height!: number;
 
-  @Column({ type: 'int' })
+  @Column()
   age!: number;
 
-  @Column({ type: 'enum', enum: ['male', 'female', 'other'] })
-  gender!: Gender;
+  @Column()
+  gender!: string;
 
-  @Column({
-    type: 'enum',
-    enum: ['sedentary', 'light', 'moderate', 'active', 'very_active'],
-  })
-  activityLevel!: ActivityLevel;
+  @Column()
+  activityLevel!: string;
 
   // Goals
-  @Column({ type: 'enum', enum: ['lose', 'maintain', 'gain'] })
-  weightGoal!: WeightGoal;
+  @Column()
+  weightGoal!: string;
 
   @Column({ type: 'decimal', precision: 5, scale: 2 })
   targetWeight!: number;
 
-  @Column({ type: 'decimal', precision: 3, scale: 2 })
-  weeklyWeightChange!: number; // kg per week
+  @Column({ type: 'decimal', precision: 4, scale: 2 })
+  weeklyWeightChange!: number;
 
   // Macro Goals
-  @Column({ type: 'int' })
+  @Column()
   dailyCalories!: number;
 
   @Column({ type: 'decimal', precision: 6, scale: 2 })
@@ -70,18 +62,15 @@ export class UserNutritionProfileEntity {
   fatGrams!: number;
 
   // Preferences
-  @Column({ type: 'enum', enum: ['kg', 'lbs'], default: 'kg' })
-  weightUnit!: WeightUnit;
+  @Column({ default: 'kg' })
+  weightUnit!: string;
 
-  @Column({ type: 'enum', enum: ['cm', 'ft'], default: 'cm' })
-  heightUnit!: HeightUnit;
+  @Column({ default: 'cm' })
+  heightUnit!: string;
 
   @CreateDateColumn()
   createdAt!: Date;
 
   @UpdateDateColumn()
   updatedAt!: Date;
-
-  @OneToMany(() => FoodEntryEntity, foodEntry => foodEntry.userProfile)
-  foodEntries!: FoodEntryEntity[];
 }
