@@ -37,7 +37,11 @@ import {
 } from '@app/entity-data-models/dtos/shopping-list.dto';
 import { GoogleGenAI } from '@google/genai';
 import { HttpService } from '@nestjs/axios';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { lastValueFrom } from 'rxjs';
 import { Repository } from 'typeorm';
@@ -937,13 +941,21 @@ export class NutritionService {
   async createUserProfile(
     dto: CreateUserNutritionProfileDto,
   ): Promise<UserNutritionProfileResponseDto> {
+    console.log('Creating profile for user:', dto.userId);
+    console.log('Anthropometrics:', dto.anthropometrics);
+    console.log('Goals:', dto.goals);
+    console.log('MacroGoals:', dto.macroGoals);
+    console.log('Preferences:', dto.preferences);
+
     // Check if profile already exists
     const existing = await this.userProfileRepo.findOne({
       where: { userId: dto.userId },
     });
 
     if (existing) {
-      throw new Error('El perfil de usuario ya existe');
+      throw new BadRequestException(
+        `El perfil de usuario ya existe para userId: ${dto.userId}`,
+      );
     }
 
     // Create profile with initial data
@@ -981,6 +993,7 @@ export class NutritionService {
     }
 
     const saved = await this.userProfileRepo.save(profile);
+    console.log('Profile saved successfully:', saved.id);
     return this.mapProfileToDto(saved);
   }
 
