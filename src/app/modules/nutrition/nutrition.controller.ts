@@ -13,10 +13,12 @@ import {
   UpdateUserNutritionProfileDto,
 } from '@app/entity-data-models';
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
+  InternalServerErrorException,
   Param,
   Post,
   Put,
@@ -111,9 +113,16 @@ export class NutritionController {
   async createUserProfile(@Body() dto: CreateUserNutritionProfileDto) {
     try {
       const profile = await this.nutritionService.createUserProfile(dto);
+
       return profile;
     } catch (error) {
-      throw error;
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException(
+        `Error al crear perfil de usuario: ${error.message}`,
+      );
     }
   }
 
