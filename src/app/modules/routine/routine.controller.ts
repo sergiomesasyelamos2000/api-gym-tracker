@@ -16,12 +16,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { RoutineService } from './routine.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   CurrentUser,
   CurrentUserData,
 } from '../auth/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RoutineService } from './routine.service';
 
 @Controller('routines')
 @UseGuards(JwtAuthGuard)
@@ -38,7 +38,6 @@ export class RoutineController {
   // 🧪 TEST ENDPOINT - NO AUTH - Remove after testing
   @Get('test-no-auth')
   async testNoAuth() {
-    console.log('🧪 TEST: testNoAuth() called - NO AUTHENTICATION');
     return {
       message: 'Backend is reachable!',
       timestamp: new Date().toISOString(),
@@ -47,19 +46,13 @@ export class RoutineController {
 
   @Get('sessions')
   async getAllSessions(@CurrentUser() user: CurrentUserData) {
-    console.log('🎯 getAllSessions() called for user:', user.id);
     const result = await this.routineService.getAllSessions(user.id);
-    console.log('✅ getAllSessions() returning:', result.length, 'sessions');
     return result;
   }
 
   @Get('stats/global')
   async getGlobalStats(@CurrentUser() user: CurrentUserData) {
-    console.log('🎯 getGlobalStats() called for user:', user.id);
-    console.log('🎯 User object:', user);
-
     const result = await this.routineService.getGlobalStats(user.id);
-    console.log('✅ getGlobalStats() returning:', result);
     return result;
   }
 
