@@ -9,6 +9,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RoutineController } from './routine.controller';
 import { RoutineService } from './routine.service';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   controllers: [RoutineController],
@@ -21,6 +22,7 @@ import { RoutineService } from './routine.service';
       SetEntity,
       RoutineSessionEntity,
     ]),
+    AuthModule,
   ],
   exports: [TypeOrmModule],
 })

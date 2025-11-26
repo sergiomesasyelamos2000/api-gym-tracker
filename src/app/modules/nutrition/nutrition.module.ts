@@ -1,22 +1,24 @@
-import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { NutritionController } from './nutrition.controller';
-import { NutritionService } from './nutrition.service';
-import { HttpModule } from '@nestjs/axios';
 import {
-  UserNutritionProfileEntity,
+  CustomMealEntity,
+  CustomProductEntity,
+  FavoriteProductEntity,
   FoodEntryEntity,
   ShoppingListItemEntity,
-  FavoriteProductEntity,
-  CustomProductEntity,
-  CustomMealEntity,
+  UserNutritionProfileEntity,
 } from '@app/entity-data-models';
+import { HttpModule } from '@nestjs/axios';
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from '../auth/auth.module';
+import { NutritionController } from './nutrition.controller';
+import { NutritionService } from './nutrition.service';
 
 @Module({
   controllers: [NutritionController],
   providers: [NutritionService],
   imports: [
     HttpModule,
+    AuthModule,
     TypeOrmModule.forFeature([
       UserNutritionProfileEntity,
       FoodEntryEntity,

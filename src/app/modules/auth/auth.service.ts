@@ -234,6 +234,15 @@ export class AuthService {
       email: user.email,
     };
 
+    console.log('🔑 Generating tokens for user:', user.email);
+    console.log('🔑 Payload:', payload);
+    console.log(
+      '🔑 JWT_SECRET:',
+      process.env.JWT_SECRET
+        ? `${process.env.JWT_SECRET.substring(0, 10)}...`
+        : 'NOT SET (using default)',
+    );
+
     const accessToken = this.jwtService.sign(payload, {
       expiresIn: '15m', // Access token expires in 15 minutes
     });
@@ -241,6 +250,11 @@ export class AuthService {
     const refreshToken = this.jwtService.sign(payload, {
       expiresIn: '7d', // Refresh token expires in 7 days
     });
+
+    console.log(
+      '✅ Access token generated:',
+      accessToken.substring(0, 20) + '...',
+    );
 
     return {
       accessToken,
