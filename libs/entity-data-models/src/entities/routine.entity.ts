@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -10,6 +11,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { RoutineExerciseEntity } from './routine-exercise.entity';
 import { ExerciseEntity } from './exercise.entity';
 import { RoutineSessionEntity } from './routine-session.entity';
+import { UserEntity } from './user.entity';
 
 @Entity()
 export class RoutineEntity {
@@ -21,6 +23,12 @@ export class RoutineEntity {
 
   @Column({ type: 'int', default: 0 })
   totalTime!: number; // en segundos
+
+  @Column()
+  userId!: string;
+
+  @ManyToOne(() => UserEntity, { onDelete: 'CASCADE' })
+  user!: UserEntity;
 
   @CreateDateColumn()
   createdAt!: Date;
