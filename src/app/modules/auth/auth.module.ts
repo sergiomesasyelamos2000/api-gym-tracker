@@ -19,10 +19,7 @@ import { UserEntity } from '@app/entity-data-models';
       useFactory: async (configService: ConfigService) => {
         const secret =
           configService.get<string>('JWT_SECRET') || 'super-secret';
-        console.log(
-          '🔧 JwtModule initialized with secret:',
-          secret.substring(0, 10) + '...',
-        );
+
         return {
           secret,
           signOptions: { expiresIn: '15m' }, // Default for access tokens

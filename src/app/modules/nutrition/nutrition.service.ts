@@ -941,12 +941,6 @@ export class NutritionService {
   async createUserProfile(
     dto: CreateUserNutritionProfileDto,
   ): Promise<UserNutritionProfileResponseDto> {
-    console.log('Creating profile for user:', dto.userId);
-    console.log('Anthropometrics:', dto.anthropometrics);
-    console.log('Goals:', dto.goals);
-    console.log('MacroGoals:', dto.macroGoals);
-    console.log('Preferences:', dto.preferences);
-
     // Check if profile already exists
     const existing = await this.userProfileRepo.findOne({
       where: { userId: dto.userId },
@@ -993,7 +987,6 @@ export class NutritionService {
     }
 
     const saved = await this.userProfileRepo.save(profile);
-    console.log('Profile saved successfully:', saved.id);
     return this.mapProfileToDto(saved);
   }
 
