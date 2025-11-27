@@ -21,7 +21,12 @@ export class RoutineSessionEntity {
   exercises!: {
     exerciseId: string;
     name: string;
-    sets: { weight: number; reps: number; completed: boolean }[];
+    sets: {
+      weight: number;
+      reps: number;
+      completed: boolean;
+      isRecord?: boolean;
+    }[];
   }[];
 
   @Column({ type: 'int' })

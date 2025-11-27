@@ -8,6 +8,11 @@ export class RoutineSessionRequestDto {
     exerciseName: string;
     totalWeight: number;
     totalReps: number;
-    sets: { weight: number; reps: number; completed: boolean }[];
+    sets: {
+      weight: number;
+      reps: number;
+      completed: boolean;
+      isRecord?: boolean;
+    }[];
   }[];
 }
