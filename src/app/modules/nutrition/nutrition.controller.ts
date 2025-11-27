@@ -149,6 +149,25 @@ export class NutritionController {
     return this.nutritionService.addFoodEntry(dto);
   }
 
+  // IMPORTANT: Specific routes (weekly, monthly) must come BEFORE generic routes (:date)
+  // to prevent route conflicts where "weekly" or "monthly" are interpreted as dates
+  @Get('diary/:userId/weekly')
+  async getWeeklySummary(
+    @Param('userId') userId: string,
+    @Query('startDate') startDate: string,
+  ) {
+    return this.nutritionService.getWeeklySummary(userId, startDate);
+  }
+
+  @Get('diary/:userId/monthly')
+  async getMonthlySummary(
+    @Param('userId') userId: string,
+    @Query('year') year: number,
+    @Query('month') month: number,
+  ) {
+    return this.nutritionService.getMonthlySummary(userId, year, month);
+  }
+
   @Get('diary/:userId/:date')
   async getDailyEntries(
     @Param('userId') userId: string,
@@ -172,23 +191,6 @@ export class NutritionController {
     @CurrentUser() user: CurrentUserData,
   ) {
     return this.nutritionService.deleteFoodEntry(entryId, user.id);
-  }
-
-  @Get('diary/:userId/weekly')
-  async getWeeklySummary(
-    @Param('userId') userId: string,
-    @Query('startDate') startDate: string,
-  ) {
-    return this.nutritionService.getWeeklySummary(userId, startDate);
-  }
-
-  @Get('diary/:userId/monthly')
-  async getMonthlySummary(
-    @Param('userId') userId: string,
-    @Query('year') year: number,
-    @Query('month') month: number,
-  ) {
-    return this.nutritionService.getMonthlySummary(userId, year, month);
   }
 
   // ==================== SHOPPING LIST ENDPOINTS ====================
