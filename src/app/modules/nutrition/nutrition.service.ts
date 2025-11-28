@@ -637,16 +637,66 @@ export class NutritionService {
     try {
       const response = await lastValueFrom(
         this.httpService.get(
-          `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(
-            name,
-          )}&search_simple=1&action=process&json=1&page_size=1`,
+          `https://es.openfoodfacts.org/cgi/search.pl?` +
+            `search_terms=${encodeURIComponent(name)}&` +
+            `search_simple=1&` +
+            `action=process&` +
+            `json=1&` +
+            `page_size=20&` + // Obtener más resultados para filtrar mejor
+            `countries_tags_es=españa&` + // Solo productos de España
+            `fields=product_name,product_name_es,brands,nutriments,code,image_url,nutrition_grades`,
+          {
+            headers: {
+              'User-Agent': 'GymTrackerApp/1.0',
+            },
+          },
         ),
       );
-      const product = response.data.products[0];
+
+      const products = response.data.products || [];
+
+      if (products.length === 0) {
+        return null;
+      }
+
+      // Filtrar productos con información nutricional completa
+      const validProducts = products.filter(
+        (p: any) =>
+          p.nutriments?.['energy-kcal_100g'] &&
+          p.nutriments?.['proteins_100g'] !== undefined &&
+          p.nutriments?.['carbohydrates_100g'] !== undefined &&
+          p.nutriments?.['fat_100g'] !== undefined,
+      );
+
+      if (validProducts.length === 0) {
+        return null;
+      }
+
+      // Seleccionar el mejor resultado (el primero con información completa)
+      const product = validProducts[0];
 
       return {
-        name: product.product_name,
-        nutriments: product.nutriments,
+        code: product.code,
+        name: product.product_name_es ?? product.product_name,
+        brand: product.brands ?? null,
+        image: product.image_url ?? null,
+        nutritionGrade: product.nutrition_grades ?? null,
+        nutriments: {
+          calories: Math.round(product.nutriments['energy-kcal_100g'] ?? 0),
+          protein: Math.round(
+            (product.nutriments['proteins_100g'] ?? 0) * 10,
+          ) / 10,
+          carbohydrates: Math.round(
+            (product.nutriments['carbohydrates_100g'] ?? 0) * 10,
+          ) / 10,
+          fat: Math.round((product.nutriments['fat_100g'] ?? 0) * 10) / 10,
+          fiber: product.nutriments['fiber_100g']
+            ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
+            : null,
+          sugar: product.nutriments['sugars_100g']
+            ? Math.round(product.nutriments['sugars_100g'] * 10) / 10
+            : null,
+        },
       };
     } catch (error) {
       console.error('Error buscando nutrición por nombre:', error);
@@ -654,34 +704,90 @@ export class NutritionService {
     }
   }
 
-  // Escaneo código
+  // Escaneo código de barras
   async scanCode(code: string): Promise<any> {
     try {
       const response = await lastValueFrom(
         this.httpService.get(
-          `https://world.openfoodfacts.net/api/v2/product/${code}?fields=product_name,nutrition_grades,nutriments,image_url&lc=es`,
+          `https://es.openfoodfacts.org/api/v2/product/${code}?fields=product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code,serving_size&lc=es`,
+          {
+            headers: {
+              'User-Agent': 'GymTrackerApp/1.0',
+            },
+          },
         ),
       );
       const product = response.data.product;
 
-      // Mapeo de los campos principales
+      if (!product) {
+        throw new NotFoundException(
+          `Producto con código de barras ${code} no encontrado`,
+        );
+      }
+
+      // Mapeo completo con información nutricional por 100g
       const mappedProduct = {
-        name: product.product_name ?? 'Producto sin nombre',
+        code: product.code,
+        name:
+          product.product_name_es ??
+          product.product_name ??
+          'Producto sin nombre',
+        brand: product.brands ?? null,
         image: product.image_url ?? null,
+        categories: product.categories ?? null,
         nutritionGrade: product.nutrition_grades ?? null,
-        calories: product.nutriments?.['energy-kcal'] ?? null,
-        carbohydrates: product.nutriments?.['carbohydrates'] ?? null,
-        protein: product.nutriments?.['proteins'] ?? null,
-        fat: product.nutriments?.['fat'] ?? null,
+        servingSize: product.serving_size ?? null,
+        grams: 100, // Base de cálculo por 100g
+        calories: Math.round(
+          product.nutriments?.['energy-kcal_100g'] ??
+            product.nutriments?.['energy-kcal'] ??
+            0,
+        ),
+        carbohydrates: Math.round(
+          (product.nutriments?.['carbohydrates_100g'] ??
+            product.nutriments?.['carbohydrates'] ??
+            0) * 10,
+        ) / 10,
+        protein: Math.round(
+          (product.nutriments?.['proteins_100g'] ??
+            product.nutriments?.['proteins'] ??
+            0) * 10,
+        ) / 10,
+        fat: Math.round(
+          (product.nutriments?.['fat_100g'] ??
+            product.nutriments?.['fat'] ??
+            0) * 10,
+        ) / 10,
+        fiber: product.nutriments?.['fiber_100g']
+          ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
+          : null,
+        sugar: product.nutriments?.['sugars_100g']
+          ? Math.round(product.nutriments['sugars_100g'] * 10) / 10
+          : null,
+        sodium: product.nutriments?.['sodium_100g']
+          ? Math.round(product.nutriments['sodium_100g'] * 1000) / 10
+          : null,
+        saturatedFat: product.nutriments?.['saturated-fat_100g']
+          ? Math.round(product.nutriments['saturated-fat_100g'] * 10) / 10
+          : null,
         others: Object.entries(product.nutriments ?? {})
           .filter(
             ([key]) =>
               ![
                 'energy-kcal',
+                'energy-kcal_100g',
                 'energy',
+                'energy_100g',
                 'carbohydrates',
+                'carbohydrates_100g',
                 'proteins',
+                'proteins_100g',
                 'fat',
+                'fat_100g',
+                'fiber_100g',
+                'sugars_100g',
+                'sodium_100g',
+                'saturated-fat_100g',
                 'nova',
               ].some(main => key.startsWith(main)),
           )
@@ -698,22 +804,105 @@ export class NutritionService {
     }
   }
 
+  /**
+   * Búsqueda avanzada de productos por nombre (similar a VirtuaGym)
+   * Prioriza productos españoles con información nutricional completa
+   */
+  async searchProductsByName(
+    searchTerm: string,
+    page: number = 1,
+    pageSize: number = 20,
+  ): Promise<{ products: any[]; total: number }> {
+    try {
+      const response = await lastValueFrom(
+        this.httpService.get(
+          `https://es.openfoodfacts.org/cgi/search.pl?` +
+            `search_terms=${encodeURIComponent(searchTerm)}&` +
+            `search_simple=1&` +
+            `action=process&` +
+            `json=1&` +
+            `page=${page}&` +
+            `page_size=${pageSize}&` +
+            `countries_tags_es=españa&` +
+            `states_tags=en:complete&` +
+            `fields=product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code`,
+          {
+            headers: {
+              'User-Agent': 'GymTrackerApp/1.0',
+            },
+          },
+        ),
+      );
+
+      const products = response.data.products || [];
+
+      const mappedProducts = products
+        .filter((product: any) => {
+          const hasValidName = product.product_name_es || product.product_name;
+          const hasCompleteNutrition =
+            product.nutriments &&
+            product.nutriments['energy-kcal_100g'] !== undefined &&
+            product.nutriments['proteins_100g'] !== undefined &&
+            product.nutriments['carbohydrates_100g'] !== undefined &&
+            product.nutriments['fat_100g'] !== undefined;
+
+          return hasValidName && hasCompleteNutrition;
+        })
+        .map((product: any) => ({
+          code: product.code,
+          name:
+            product.product_name_es ??
+            product.product_name ??
+            'Producto sin nombre',
+          brand: product.brands ?? null,
+          image: product.image_url ?? null,
+          nutritionGrade: product.nutrition_grades ?? null,
+          categories: product.categories ?? null,
+          grams: 100,
+          calories: Math.round(product.nutriments['energy-kcal_100g'] ?? 0),
+          carbohydrates: Math.round(
+            (product.nutriments['carbohydrates_100g'] ?? 0) * 10,
+          ) / 10,
+          protein: Math.round(
+            (product.nutriments['proteins_100g'] ?? 0) * 10,
+          ) / 10,
+          fat: Math.round((product.nutriments['fat_100g'] ?? 0) * 10) / 10,
+          fiber: product.nutriments['fiber_100g']
+            ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
+            : null,
+          sugar: product.nutriments['sugars_100g']
+            ? Math.round(product.nutriments['sugars_100g'] * 10) / 10
+            : null,
+        }));
+
+      return {
+        products: mappedProducts,
+        total: response.data.count || mappedProducts.length,
+      };
+    } catch (error) {
+      console.error('Error buscando productos por nombre:', error);
+      return {
+        products: [],
+        total: 0,
+      };
+    }
+  }
+
   async getAllProducts(
     page: number = 1,
     pageSize: number = 100,
   ): Promise<{ products: any[]; total: number }> {
     try {
-      // Usar el parámetro countries_tags para filtrar por España
-      // También puedes usar categories populares en España
+      // Obtener productos de España con filtros optimizados
       const response = await lastValueFrom(
         this.httpService.get(
-          `https://world.openfoodfacts.org/api/v2/search?` +
-            `countries_tags=spain&` + // Filtra productos vendidos en España
-            `language=es&` + // Idioma español
-            `fields=product_name,product_name_es,brands,countries_tags,nutrition_grades,nutriments,image_url,code&` +
+          `https://es.openfoodfacts.org/api/v2/search?` +
+            `countries_tags_es=españa&` + // Filtro específico para España
+            `states_tags=en:complete&` + // Solo productos con información completa
+            `fields=product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code&` +
             `page=${page}&` +
             `page_size=${pageSize}&` +
-            `sort_by=unique_scans_n&` + // Ordena por popularidad
+            `sort_by=unique_scans_n&` + // Ordena por popularidad (productos más escaneados)
             `json=1`,
           {
             headers: {
@@ -727,17 +916,17 @@ export class NutritionService {
 
       const mappedProducts = products
         .filter((product: any) => {
-          // Filtros adicionales para asegurar calidad
-          const hasSpanishName =
-            product.product_name_es ||
-            (product.product_name &&
-              /^[a-zA-Z0-9\sáéíóúñÁÉÍÓÚÑ.,'-]+$/.test(product.product_name));
-          const hasNutriments =
+          // Filtros de calidad estrictos
+          const hasValidName = product.product_name_es || product.product_name;
+          const hasCompleteNutrition =
             product.nutriments &&
-            (product.nutriments['energy-kcal'] !== undefined ||
-              product.nutriments['energy-kcal_100g'] !== undefined);
+            product.nutriments['energy-kcal_100g'] !== undefined &&
+            product.nutriments['proteins_100g'] !== undefined &&
+            product.nutriments['carbohydrates_100g'] !== undefined &&
+            product.nutriments['fat_100g'] !== undefined;
+          const hasValidCode = product.code && product.code.length > 0;
 
-          return hasSpanishName && hasNutriments;
+          return hasValidName && hasCompleteNutrition && hasValidCode;
         })
         .map((product: any) => ({
           code: product.code,
@@ -748,25 +937,25 @@ export class NutritionService {
           brand: product.brands ?? null,
           image: product.image_url ?? null,
           nutritionGrade: product.nutrition_grades ?? null,
-          grams: product.nutriments?.['serving_size']
-            ? parseInt(product.nutriments.serving_size)
-            : 100,
-          calories:
-            product.nutriments?.['energy-kcal_100g'] ??
-            product.nutriments?.['energy-kcal'] ??
-            null,
-          carbohydrates:
-            product.nutriments?.['carbohydrates_100g'] ??
-            product.nutriments?.['carbohydrates'] ??
-            null,
-          protein:
-            product.nutriments?.['proteins_100g'] ??
-            product.nutriments?.['proteins'] ??
-            null,
-          fat:
-            product.nutriments?.['fat_100g'] ??
-            product.nutriments?.['fat'] ??
-            null,
+          categories: product.categories ?? null,
+          grams: 100, // Base de cálculo estándar por 100g
+          calories: Math.round(product.nutriments['energy-kcal_100g'] ?? 0),
+          carbohydrates: Math.round(
+            (product.nutriments['carbohydrates_100g'] ?? 0) * 10,
+          ) / 10,
+          protein: Math.round(
+            (product.nutriments['proteins_100g'] ?? 0) * 10,
+          ) / 10,
+          fat: Math.round((product.nutriments['fat_100g'] ?? 0) * 10) / 10,
+          fiber: product.nutriments['fiber_100g']
+            ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
+            : null,
+          sugar: product.nutriments['sugars_100g']
+            ? Math.round(product.nutriments['sugars_100g'] * 10) / 10
+            : null,
+          sodium: product.nutriments['sodium_100g']
+            ? Math.round(product.nutriments['sodium_100g'] * 1000) / 10
+            : null, // Convertir a mg
           others: Object.entries(product.nutriments ?? {})
             .filter(
               ([key]) =>
@@ -774,12 +963,16 @@ export class NutritionService {
                   'energy-kcal',
                   'energy-kcal_100g',
                   'energy',
+                  'energy_100g',
                   'carbohydrates',
                   'carbohydrates_100g',
                   'proteins',
                   'proteins_100g',
                   'fat',
                   'fat_100g',
+                  'fiber_100g',
+                  'sugars_100g',
+                  'sodium_100g',
                   'nova',
                 ].some(main => key.startsWith(main)),
             )
@@ -808,7 +1001,12 @@ export class NutritionService {
     try {
       const response = await lastValueFrom(
         this.httpService.get(
-          `https://world.openfoodfacts.org/api/v2/product/${code}?fields=product_name,product_name_es,brands,countries_tags,nutrition_grades,nutriments,image_url,code&lc=es`,
+          `https://es.openfoodfacts.org/api/v2/product/${code}?fields=product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code,serving_size&lc=es`,
+          {
+            headers: {
+              'User-Agent': 'GymTrackerApp/1.0',
+            },
+          },
         ),
       );
 
@@ -820,7 +1018,7 @@ export class NutritionService {
         );
       }
 
-      // Mapear el producto con la misma estructura que getAllProducts
+      // Mapear el producto con estructura completa
       const mappedProduct = {
         code: product.code,
         name:
@@ -830,23 +1028,41 @@ export class NutritionService {
         brand: product.brands ?? null,
         image: product.image_url ?? null,
         nutritionGrade: product.nutrition_grades ?? null,
-        grams: 100, // Base de cálculo por defecto
-        calories:
+        categories: product.categories ?? null,
+        servingSize: product.serving_size ?? null,
+        grams: 100, // Base de cálculo estándar por 100g
+        calories: Math.round(
           product.nutriments?.['energy-kcal_100g'] ??
-          product.nutriments?.['energy-kcal'] ??
-          null,
-        carbohydrates:
-          product.nutriments?.['carbohydrates_100g'] ??
-          product.nutriments?.['carbohydrates'] ??
-          null,
-        protein:
-          product.nutriments?.['proteins_100g'] ??
-          product.nutriments?.['proteins'] ??
-          null,
-        fat:
-          product.nutriments?.['fat_100g'] ??
-          product.nutriments?.['fat'] ??
-          null,
+            product.nutriments?.['energy-kcal'] ??
+            0,
+        ),
+        carbohydrates: Math.round(
+          (product.nutriments?.['carbohydrates_100g'] ??
+            product.nutriments?.['carbohydrates'] ??
+            0) * 10,
+        ) / 10,
+        protein: Math.round(
+          (product.nutriments?.['proteins_100g'] ??
+            product.nutriments?.['proteins'] ??
+            0) * 10,
+        ) / 10,
+        fat: Math.round(
+          (product.nutriments?.['fat_100g'] ??
+            product.nutriments?.['fat'] ??
+            0) * 10,
+        ) / 10,
+        fiber: product.nutriments?.['fiber_100g']
+          ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
+          : null,
+        sugar: product.nutriments?.['sugars_100g']
+          ? Math.round(product.nutriments['sugars_100g'] * 10) / 10
+          : null,
+        sodium: product.nutriments?.['sodium_100g']
+          ? Math.round(product.nutriments['sodium_100g'] * 1000) / 10
+          : null, // Convertir a mg
+        saturatedFat: product.nutriments?.['saturated-fat_100g']
+          ? Math.round(product.nutriments['saturated-fat_100g'] * 10) / 10
+          : null,
         others: Object.entries(product.nutriments ?? {})
           .filter(
             ([key]) =>
@@ -854,12 +1070,17 @@ export class NutritionService {
                 'energy-kcal',
                 'energy-kcal_100g',
                 'energy',
+                'energy_100g',
                 'carbohydrates',
                 'carbohydrates_100g',
                 'proteins',
                 'proteins_100g',
                 'fat',
                 'fat_100g',
+                'fiber_100g',
+                'sugars_100g',
+                'sodium_100g',
+                'saturated-fat_100g',
                 'nova',
               ].some(main => key.startsWith(main)),
           )
