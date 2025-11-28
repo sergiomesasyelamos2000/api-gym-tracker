@@ -67,6 +67,39 @@ export class NutritionController {
     return product;
   }
 
+  @Get('products/search')
+  async searchProductsByName(
+    @Query('q') searchTerm: string,
+    @Query('page') page: string = '1',
+    @Query('pageSize') pageSize: string = '20',
+  ) {
+    try {
+      if (!searchTerm || searchTerm.trim().length === 0) {
+        return {
+          products: [],
+          total: 0,
+        };
+      }
+
+      const pageNum = parseInt(page) || 1;
+      const pageSizeNum = parseInt(pageSize) || 20;
+
+      const result = await this.nutritionService.searchProductsByName(
+        searchTerm.trim(),
+        pageNum,
+        pageSizeNum,
+      );
+
+      return result;
+    } catch (error) {
+      console.error('Error en controller searchProductsByName:', error);
+      return {
+        products: [],
+        total: 0,
+      };
+    }
+  }
+
   @Get('products')
   async getAllProducts(
     @Query('page') page: string = '1',
