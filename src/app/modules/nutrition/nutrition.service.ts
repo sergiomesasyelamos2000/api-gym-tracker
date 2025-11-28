@@ -1621,7 +1621,17 @@ export class NutritionService {
     // Toggle the purchased status
     item.purchased = !item.purchased;
 
-    const updated = await this.shoppingListRepo.save(item);
+    await this.shoppingListRepo.save(item);
+
+    // Reload the entity to ensure all fields are present
+    const updated = await this.shoppingListRepo.findOne({
+      where: { id: itemId },
+    });
+
+    if (!updated) {
+      throw new NotFoundException('Error al actualizar el item');
+    }
+
     return this.mapShoppingListItemToDto(updated);
   }
 
