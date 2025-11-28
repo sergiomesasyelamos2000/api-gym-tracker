@@ -214,12 +214,12 @@ export class NutritionController {
     return this.nutritionService.updateShoppingListItem(itemId, dto, user.id);
   }
 
-  @Put('shopping-list/:itemId/toggle')
+  @Put('shopping-list/:userId/:itemId/toggle')
   async togglePurchased(
+    @Param('userId') userId: string,
     @Param('itemId') itemId: string,
-    @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.togglePurchased(itemId, user.id);
+    return this.nutritionService.togglePurchased(itemId, userId);
   }
 
   @Delete('shopping-list/:itemId')
