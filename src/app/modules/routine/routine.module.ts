@@ -24,6 +24,6 @@ import { AuthModule } from '../auth/auth.module';
     ]),
     AuthModule,
   ],
-  exports: [TypeOrmModule],
+  exports: [TypeOrmModule, RoutineService],
 })
 export class RoutineModule {}

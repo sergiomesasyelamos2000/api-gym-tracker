@@ -29,6 +29,8 @@ import { NutritionModule } from './modules/nutrition/nutrition.module';
 import { RoutineModule } from './modules/routine/routine.module';
 import { PopulateModule } from './services/populate.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { ExportController } from './controllers/export.controller';
+import { ExportService } from './services/export.service';
 
 @Module({
   imports: [
@@ -74,8 +76,8 @@ import { AuthModule } from './modules/auth/auth.module';
     PopulateModule,
     AuthModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  controllers: [AppController, ExportController],
+  providers: [AppService, ExportService],
 })
 export class AppModule implements OnApplicationBootstrap {
   constructor() {}

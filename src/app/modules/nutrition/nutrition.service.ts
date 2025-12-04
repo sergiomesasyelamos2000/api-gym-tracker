@@ -7,6 +7,7 @@ import {
   FavoriteProductEntity,
   FoodEntryEntity,
   FoodEntryResponseDto,
+  RoutineSessionEntity,
   ShoppingListItemEntity,
   UpdateFoodEntryDto,
   UpdateMacroGoalsDto,
@@ -48,6 +49,9 @@ import { Repository } from 'typeorm';
 import cloudinary from '../../../config/cloudinary.config';
 import { ENV } from '../../../environments/environment';
 import NUTRIENT_LABELS_ES from '../../utils/nutrients-labels';
+import { AIService } from '../../services/ai.service';
+import { ChatMessage } from '../../services/ai-provider.base';
+import { RoutineService } from '../routine/routine.service';
 
 @Injectable()
 export class NutritionService {
@@ -57,6 +61,8 @@ export class NutritionService {
 
   constructor(
     private readonly httpService: HttpService,
+    private readonly aiService: AIService,
+    private readonly routineService: RoutineService,
     @InjectRepository(UserNutritionProfileEntity)
     private readonly userProfileRepo: Repository<UserNutritionProfileEntity>,
     @InjectRepository(FoodEntryEntity)
@@ -71,20 +77,107 @@ export class NutritionService {
     private readonly customMealRepo: Repository<CustomMealEntity>,
   ) {}
 
-  // CHATBOT
+  // CHATBOT - Multi-API with context
 
-  async chat(text: string): Promise<string> {
+  async chat(
+    text: string,
+    history?: Array<{ role: string; content: string }>,
+    userId?: string,
+  ): Promise<any> {
     try {
-      const completion = await this.clientOpenAI.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: text,
+      // Build conversation history
+      const messages: ChatMessage[] = [];
+
+      // Add previous messages from history
+      if (history && history.length > 0) {
+        history.forEach(msg => {
+          messages.push({
+            role: msg.role === 'bot' ? 'assistant' : (msg.role as any),
+            content: msg.content,
+          });
+        });
+      }
+
+      // Add current user message
+      messages.push({
+        role: 'user',
+        content: text,
       });
 
-      const response = completion.text ?? '';
+      // Get user context if userId provided
+      let userContext: any = undefined;
+      if (userId) {
+        try {
+          // Get nutrition profile
+          const profile = await this.getUserProfile(userId);
 
-      return response;
+          // Get training data
+          const routines = await this.routineService.findAll(userId);
+          const allSessions = await this.routineService.getAllSessions(userId);
+          const stats = await this.routineService.getGlobalStats(userId);
+
+          userContext = {
+            userId,
+            profile: {
+              age: profile.anthropometrics?.age,
+              gender: profile.anthropometrics?.gender,
+              weight: profile.anthropometrics?.weight,
+              height: profile.anthropometrics?.height,
+              activityLevel: profile.anthropometrics?.activityLevel,
+              goals: {
+                weightGoal: profile.goals?.weightGoal,
+                targetWeight: profile.goals?.targetWeight,
+                dailyCalories: profile.macroGoals?.dailyCalories,
+                protein: profile.macroGoals?.protein,
+                carbs: profile.macroGoals?.carbs,
+                fat: profile.macroGoals?.fat,
+              },
+            },
+            training: {
+              routines: routines.map(r => ({
+                id: r.id,
+                name: r.title,
+                description: undefined, // Description does not exist on RoutineEntity
+                exerciseCount: r.routineExercises?.length || 0,
+              })),
+              recentSessions: allSessions.slice(0, 5).map(s => ({
+                date: new Date(s.createdAt).toLocaleDateString('es-ES'),
+                routineName: s.routine?.title || 'Rutina desconocida',
+                exercisesCompleted: s.exercises?.length || 0,
+              })),
+              stats: {
+                totalSessions: allSessions.length || 0,
+                totalExercises: stats.completedSets || 0, // Using completedSets as proxy for volume
+                averageSessionsPerWeek:
+                  allSessions.length > 0
+                    ? parseFloat((allSessions.length / 4).toFixed(1)) // Approx last month
+                    : 0,
+                lastWorkoutDate:
+                  allSessions.length > 0
+                    ? new Date(allSessions[0].createdAt).toLocaleDateString(
+                        'es-ES',
+                      )
+                    : undefined,
+              },
+              schedule: this.calculateSchedule(allSessions),
+            },
+          };
+        } catch (error) {
+          // User profile or training data not found, continue without full context
+          console.log('Error fetching user context:', error.message);
+        }
+      }
+
+      // Call AI service with multi-provider fallback
+      const response = await this.aiService.chat(messages, userContext);
+
+      return {
+        reply: response.content,
+        provider: response.provider,
+        model: response.model,
+      };
     } catch (error) {
-      console.error('Error en la solicitud a AIML API:', error);
+      console.error('Error en chat:', error);
       throw new Error(
         'No se pudo procesar la solicitud. Por favor, inténtalo más tarde.',
       );
@@ -683,12 +776,11 @@ export class NutritionService {
         nutritionGrade: product.nutrition_grades ?? null,
         nutriments: {
           calories: Math.round(product.nutriments['energy-kcal_100g'] ?? 0),
-          protein: Math.round(
-            (product.nutriments['proteins_100g'] ?? 0) * 10,
-          ) / 10,
-          carbohydrates: Math.round(
-            (product.nutriments['carbohydrates_100g'] ?? 0) * 10,
-          ) / 10,
+          protein:
+            Math.round((product.nutriments['proteins_100g'] ?? 0) * 10) / 10,
+          carbohydrates:
+            Math.round((product.nutriments['carbohydrates_100g'] ?? 0) * 10) /
+            10,
           fat: Math.round((product.nutriments['fat_100g'] ?? 0) * 10) / 10,
           fiber: product.nutriments['fiber_100g']
             ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
@@ -743,21 +835,24 @@ export class NutritionService {
             product.nutriments?.['energy-kcal'] ??
             0,
         ),
-        carbohydrates: Math.round(
-          (product.nutriments?.['carbohydrates_100g'] ??
-            product.nutriments?.['carbohydrates'] ??
-            0) * 10,
-        ) / 10,
-        protein: Math.round(
-          (product.nutriments?.['proteins_100g'] ??
-            product.nutriments?.['proteins'] ??
-            0) * 10,
-        ) / 10,
-        fat: Math.round(
-          (product.nutriments?.['fat_100g'] ??
-            product.nutriments?.['fat'] ??
-            0) * 10,
-        ) / 10,
+        carbohydrates:
+          Math.round(
+            (product.nutriments?.['carbohydrates_100g'] ??
+              product.nutriments?.['carbohydrates'] ??
+              0) * 10,
+          ) / 10,
+        protein:
+          Math.round(
+            (product.nutriments?.['proteins_100g'] ??
+              product.nutriments?.['proteins'] ??
+              0) * 10,
+          ) / 10,
+        fat:
+          Math.round(
+            (product.nutriments?.['fat_100g'] ??
+              product.nutriments?.['fat'] ??
+              0) * 10,
+          ) / 10,
         fiber: product.nutriments?.['fiber_100g']
           ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
           : null,
@@ -860,12 +955,11 @@ export class NutritionService {
           categories: product.categories ?? null,
           grams: 100,
           calories: Math.round(product.nutriments['energy-kcal_100g'] ?? 0),
-          carbohydrates: Math.round(
-            (product.nutriments['carbohydrates_100g'] ?? 0) * 10,
-          ) / 10,
-          protein: Math.round(
-            (product.nutriments['proteins_100g'] ?? 0) * 10,
-          ) / 10,
+          carbohydrates:
+            Math.round((product.nutriments['carbohydrates_100g'] ?? 0) * 10) /
+            10,
+          protein:
+            Math.round((product.nutriments['proteins_100g'] ?? 0) * 10) / 10,
           fat: Math.round((product.nutriments['fat_100g'] ?? 0) * 10) / 10,
           fiber: product.nutriments['fiber_100g']
             ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
@@ -940,12 +1034,11 @@ export class NutritionService {
           categories: product.categories ?? null,
           grams: 100, // Base de cálculo estándar por 100g
           calories: Math.round(product.nutriments['energy-kcal_100g'] ?? 0),
-          carbohydrates: Math.round(
-            (product.nutriments['carbohydrates_100g'] ?? 0) * 10,
-          ) / 10,
-          protein: Math.round(
-            (product.nutriments['proteins_100g'] ?? 0) * 10,
-          ) / 10,
+          carbohydrates:
+            Math.round((product.nutriments['carbohydrates_100g'] ?? 0) * 10) /
+            10,
+          protein:
+            Math.round((product.nutriments['proteins_100g'] ?? 0) * 10) / 10,
           fat: Math.round((product.nutriments['fat_100g'] ?? 0) * 10) / 10,
           fiber: product.nutriments['fiber_100g']
             ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
@@ -1036,21 +1129,24 @@ export class NutritionService {
             product.nutriments?.['energy-kcal'] ??
             0,
         ),
-        carbohydrates: Math.round(
-          (product.nutriments?.['carbohydrates_100g'] ??
-            product.nutriments?.['carbohydrates'] ??
-            0) * 10,
-        ) / 10,
-        protein: Math.round(
-          (product.nutriments?.['proteins_100g'] ??
-            product.nutriments?.['proteins'] ??
-            0) * 10,
-        ) / 10,
-        fat: Math.round(
-          (product.nutriments?.['fat_100g'] ??
-            product.nutriments?.['fat'] ??
-            0) * 10,
-        ) / 10,
+        carbohydrates:
+          Math.round(
+            (product.nutriments?.['carbohydrates_100g'] ??
+              product.nutriments?.['carbohydrates'] ??
+              0) * 10,
+          ) / 10,
+        protein:
+          Math.round(
+            (product.nutriments?.['proteins_100g'] ??
+              product.nutriments?.['proteins'] ??
+              0) * 10,
+          ) / 10,
+        fat:
+          Math.round(
+            (product.nutriments?.['fat_100g'] ??
+              product.nutriments?.['fat'] ??
+              0) * 10,
+          ) / 10,
         fiber: product.nutriments?.['fiber_100g']
           ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
           : null,
@@ -2799,5 +2895,41 @@ export class NutritionService {
     }
 
     await this.customMealRepo.delete(mealId);
+  }
+
+  private calculateSchedule(sessions: RoutineSessionEntity[]): {
+    frequentDays: string[];
+    preferredTime: string;
+  } {
+    if (!sessions || sessions.length === 0) {
+      return { frequentDays: [], preferredTime: 'No definido' };
+    }
+
+    const daysCount: Record<string, number> = {};
+    const hours: number[] = [];
+
+    sessions.forEach(session => {
+      const date = new Date(session.createdAt);
+      const day = date.toLocaleDateString('es-ES', { weekday: 'long' });
+      daysCount[day] = (daysCount[day] || 0) + 1;
+      hours.push(date.getHours());
+    });
+
+    // Sort days by frequency
+    const frequentDays = Object.entries(daysCount)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3)
+      .map(([day]) => day);
+
+    // Calculate average time
+    const avgHour = hours.reduce((a, b) => a + b, 0) / hours.length;
+    let preferredTime = 'Mañana';
+    if (avgHour >= 12 && avgHour < 20) preferredTime = 'Tarde';
+    else if (avgHour >= 20) preferredTime = 'Noche';
+
+    return {
+      frequentDays,
+      preferredTime: `${preferredTime} (~${Math.round(avgHour)}:00)`,
+    };
   }
 }
