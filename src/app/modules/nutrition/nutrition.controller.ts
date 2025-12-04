@@ -44,9 +44,13 @@ export class NutritionController {
   constructor(private nutritionService: NutritionService) {}
 
   @Post()
-  async chat(@Body('text') text: string) {
-    const base = await this.nutritionService.chat(text);
-    return { reply: base };
+  async chat(
+    @Body('text') text: string,
+    @Body('history') history?: Array<{ role: string; content: string }>,
+    @Body('userId') userId?: string,
+  ) {
+    const response = await this.nutritionService.chat(text, history, userId);
+    return response;
   }
 
   @Post('photo')
