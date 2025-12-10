@@ -901,7 +901,7 @@ export class NutritionService {
 
   /**
    * Búsqueda avanzada de productos por nombre (similar a VirtuaGym)
-   * Prioriza productos españoles con información nutricional completa
+   * Implementa estrategia multi-nivel para maximizar resultados de supermercados españoles
    */
   async searchProductsByName(
     searchTerm: string,
@@ -909,29 +909,107 @@ export class NutritionService {
     pageSize: number = 20,
   ): Promise<{ products: any[]; total: number }> {
     try {
-      const response = await lastValueFrom(
-        this.httpService.get(
-          `https://es.openfoodfacts.org/cgi/search.pl?` +
-            `search_terms=${encodeURIComponent(searchTerm)}&` +
-            `search_simple=1&` +
-            `action=process&` +
-            `json=1&` +
-            `page=${page}&` +
-            `page_size=${pageSize}&` +
-            `countries_tags_es=españa&` +
-            `states_tags=en:complete&` +
-            `fields=product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code`,
-          {
-            headers: {
-              'User-Agent': 'GymTrackerApp/1.0',
-            },
-          },
-        ),
+      // Marcas de supermercados españoles para búsqueda prioritaria
+      const spanishBrands = [
+        'hacendado',
+        'dia',
+        'carrefour',
+        'lidl',
+        'eroski',
+        'auchan',
+        'alcampo',
+        'mercadona',
+      ];
+
+      // Verificar si el término de búsqueda es una marca específica
+      const isSpanishBrand = spanishBrands.some(brand =>
+        searchTerm.toLowerCase().includes(brand),
       );
 
-      const products = response.data.products || [];
+      let allProducts: any[] = [];
+      const productCodes = new Set<string>(); // Para evitar duplicados
 
-      const mappedProducts = products
+      // Estrategia 1: Búsqueda general sin restricción de país (más resultados)
+      // Esto permite encontrar productos de supermercados españoles que no están etiquetados como "españa"
+      try {
+        const generalResponse = await lastValueFrom(
+          this.httpService.get(
+            `https://es.openfoodfacts.org/cgi/search.pl?` +
+              `search_terms=${encodeURIComponent(searchTerm)}&` +
+              `search_simple=1&` +
+              `action=process&` +
+              `json=1&` +
+              `page=${page}&` +
+              `page_size=${pageSize * 2}&` + // Pedir más para compensar filtrado
+              `sort_by=unique_scans_n&` + // Ordenar por popularidad
+              `fields=product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code`,
+            {
+              headers: {
+                'User-Agent': 'GymTrackerApp/1.0',
+              },
+            },
+          ),
+        );
+
+        const generalProducts = generalResponse.data.products || [];
+        generalProducts.forEach((product: any) => {
+          if (!productCodes.has(product.code)) {
+            allProducts.push(product);
+            productCodes.add(product.code);
+          }
+        });
+      } catch (error) {
+        console.log('Error en búsqueda general:', error.message);
+      }
+
+      // Estrategia 2: Si es una marca española o hay pocos resultados, buscar específicamente por marca
+      if (isSpanishBrand || allProducts.length < 10) {
+        for (const brand of spanishBrands) {
+          if (
+            searchTerm.toLowerCase().includes(brand) ||
+            allProducts.length < 5
+          ) {
+            try {
+              const brandResponse = await lastValueFrom(
+                this.httpService.get(
+                  `https://es.openfoodfacts.org/cgi/search.pl?` +
+                    `search_terms=${encodeURIComponent(searchTerm)}&` +
+                    `tagtype_0=brands&` +
+                    `tag_contains_0=contains&` +
+                    `tag_0=${brand}&` +
+                    `action=process&` +
+                    `json=1&` +
+                    `page=1&` +
+                    `page_size=10&` +
+                    `sort_by=unique_scans_n&` +
+                    `fields=product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code`,
+                  {
+                    headers: {
+                      'User-Agent': 'GymTrackerApp/1.0',
+                    },
+                  },
+                ),
+              );
+
+              const brandProducts = brandResponse.data.products || [];
+              brandProducts.forEach((product: any) => {
+                if (!productCodes.has(product.code)) {
+                  allProducts.push(product);
+                  productCodes.add(product.code);
+                }
+              });
+            } catch (error) {
+              console.log(`Error buscando marca ${brand}:`, error.message);
+            }
+
+            // Si ya tenemos suficientes resultados, no seguir buscando más marcas
+            if (allProducts.length >= pageSize) break;
+          }
+        }
+      }
+
+      // Filtrar y mapear productos con información nutricional completa
+      const mappedProducts = allProducts
         .filter((product: any) => {
           const hasValidName = product.product_name_es || product.product_name;
           const hasCompleteNutrition =
@@ -940,8 +1018,9 @@ export class NutritionService {
             product.nutriments['proteins_100g'] !== undefined &&
             product.nutriments['carbohydrates_100g'] !== undefined &&
             product.nutriments['fat_100g'] !== undefined;
+          const hasValidCode = product.code && product.code.length > 0;
 
-          return hasValidName && hasCompleteNutrition;
+          return hasValidName && hasCompleteNutrition && hasValidCode;
         })
         .map((product: any) => ({
           code: product.code,
@@ -967,11 +1046,26 @@ export class NutritionService {
           sugar: product.nutriments['sugars_100g']
             ? Math.round(product.nutriments['sugars_100g'] * 10) / 10
             : null,
-        }));
+        }))
+        // Priorizar productos de marcas españolas
+        .sort((a: any, b: any) => {
+          const aIsSpanish = spanishBrands.some(brand =>
+            a.brand?.toLowerCase().includes(brand),
+          );
+          const bIsSpanish = spanishBrands.some(brand =>
+            b.brand?.toLowerCase().includes(brand),
+          );
+
+          if (aIsSpanish && !bIsSpanish) return -1;
+          if (!aIsSpanish && bIsSpanish) return 1;
+          return 0;
+        })
+        // Limitar al tamaño de página solicitado
+        .slice(0, pageSize);
 
       return {
         products: mappedProducts,
-        total: response.data.count || mappedProducts.length,
+        total: mappedProducts.length,
       };
     } catch (error) {
       console.error('Error buscando productos por nombre:', error);
@@ -987,15 +1081,13 @@ export class NutritionService {
     pageSize: number = 100,
   ): Promise<{ products: any[]; total: number }> {
     try {
-      // Obtener productos de España con filtros optimizados
+      // Obtener productos populares sin restricción de país para incluir más productos de supermercados
       const response = await lastValueFrom(
         this.httpService.get(
           `https://es.openfoodfacts.org/api/v2/search?` +
-            `countries_tags_es=españa&` + // Filtro específico para España
-            `states_tags=en:complete&` + // Solo productos con información completa
             `fields=product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code&` +
             `page=${page}&` +
-            `page_size=${pageSize}&` +
+            `page_size=${pageSize * 2}&` + // Pedir más para compensar filtrado
             `sort_by=unique_scans_n&` + // Ordena por popularidad (productos más escaneados)
             `json=1`,
           {
@@ -1007,6 +1099,18 @@ export class NutritionService {
       );
 
       const products = response.data.products || [];
+
+      // Marcas de supermercados españoles para priorización
+      const spanishBrands = [
+        'hacendado',
+        'dia',
+        'carrefour',
+        'lidl',
+        'eroski',
+        'auchan',
+        'alcampo',
+        'mercadona',
+      ];
 
       const mappedProducts = products
         .filter((product: any) => {
@@ -1073,11 +1177,26 @@ export class NutritionService {
               label: NUTRIENT_LABELS_ES[key] ?? key,
               value,
             })),
-        }));
+        }))
+        // Priorizar productos de marcas españolas
+        .sort((a: any, b: any) => {
+          const aIsSpanish = spanishBrands.some(brand =>
+            a.brand?.toLowerCase().includes(brand),
+          );
+          const bIsSpanish = spanishBrands.some(brand =>
+            b.brand?.toLowerCase().includes(brand),
+          );
+
+          if (aIsSpanish && !bIsSpanish) return -1;
+          if (!aIsSpanish && bIsSpanish) return 1;
+          return 0;
+        })
+        // Limitar al tamaño solicitado
+        .slice(0, pageSize);
 
       return {
         products: mappedProducts,
-        total: response.data.count || mappedProducts.length,
+        total: mappedProducts.length,
       };
     } catch (error) {
       console.error('Error obteniendo productos:', error);
