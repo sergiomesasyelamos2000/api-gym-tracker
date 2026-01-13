@@ -36,7 +36,6 @@ import {
   ShoppingListItemResponseDto,
   UpdateShoppingListItemDto,
 } from '@app/entity-data-models/dtos/shopping-list.dto';
-import { GoogleGenAI } from '@google/genai';
 import { HttpService } from '@nestjs/axios';
 import {
   BadRequestException,
@@ -47,18 +46,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { lastValueFrom } from 'rxjs';
 import { Repository } from 'typeorm';
 import cloudinary from '../../../config/cloudinary.config';
-import { ENV } from '../../../environments/environment';
-import NUTRIENT_LABELS_ES from '../../utils/nutrients-labels';
-import { AIService } from '../../services/ai.service';
 import { ChatMessage } from '../../services/ai-provider.base';
+import { AIService } from '../../services/ai.service';
+import NUTRIENT_LABELS_ES from '../../utils/nutrients-labels';
 import { RoutineService } from '../routine/routine.service';
 
 @Injectable()
 export class NutritionService {
-  private clientOpenAI = new GoogleGenAI({
-    apiKey: ENV.AIMLAPI_KEY,
-  });
-
   constructor(
     private readonly httpService: HttpService,
     private readonly aiService: AIService,

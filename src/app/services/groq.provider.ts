@@ -40,7 +40,7 @@ export class GroqProvider extends AIProvider {
 
       const completion = await this.client.chat.completions.create({
         messages: groqMessages,
-        model: 'llama-3.3-70b-versatile', // Updated from deprecated llama-3.1-70b-versatile
+        model: 'llama-3.1-8b-instant', // Smaller, faster model with lower token limits
         temperature: 0.7,
         max_tokens: 2048,
         top_p: 1,
@@ -54,7 +54,7 @@ export class GroqProvider extends AIProvider {
       return {
         content: responseText,
         provider: 'groq',
-        model: 'llama-3.3-70b-versatile',
+        model: 'llama-3.1-8b-instant',
       };
     } catch (error) {
       this.logger.error('Groq API error:', error);
