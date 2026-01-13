@@ -7,7 +7,7 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 export const ENV = {
   // API Keys
-  AIMLAPI_KEY: process.env.AIMLAPI_KEY || '',
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
   GROQ_API_KEY: process.env.GROQ_API_KEY || '',
   LOGMEAL_API_KEY: process.env.LOGMEAL_API_KEY || '',
   RAPIDAPI_KEY: process.env.RAPIDAPI_KEY || '',
