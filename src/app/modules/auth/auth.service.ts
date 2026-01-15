@@ -19,14 +19,18 @@ import {
   AuthTokensDto,
   AuthResponseDto,
 } from '@app/entity-data-models';
+import { OAuth2Client } from 'google-auth-library';
 
 @Injectable()
 export class AuthService {
+  private googleClient: OAuth2Client;
   constructor(
     private jwtService: JwtService,
     @InjectRepository(UserEntity)
     private userRepository: Repository<UserEntity>,
-  ) {}
+  ) {
+    this.googleClient = new OAuth2Client();
+  }
 
   // ==================== LOGIN ====================
 
@@ -142,6 +146,70 @@ export class AuthService {
       user: this.mapUserToDto(savedUser),
       tokens,
     };
+  }
+
+  // ==================== GOOGLE AUTH SEGURO ====================
+
+  async googleLogin(token: string): Promise<AuthResponseDto> {
+    try {
+      // 1. VERIFICAR EL TOKEN CON GOOGLE
+      // Filtrar IDs que no estén definidos en las variables de entorno
+      const audiences = [
+        process.env.GOOGLE_CLIENT_ID_WEB,
+        process.env.GOOGLE_CLIENT_ID_IOS,
+        process.env.GOOGLE_CLIENT_ID_ANDROID,
+      ].filter((id): id is string => !!id);
+
+      const ticket = await this.googleClient.verifyIdToken({
+        idToken: token,
+        audience: audiences,
+      });
+
+      // 2. OBTENER DATOS SEGUROS DEL PAYLOAD
+      const payload = ticket.getPayload();
+
+      if (!payload) {
+        throw new UnauthorizedException('Invalid Google Token payload');
+      }
+
+      const { email, name, picture, sub: googleId } = payload;
+
+      // 3. BUSCAR O CREAR USUARIO (Lógica idéntica a la que tenías, pero con datos verificados)
+      let user = await this.userRepository.findOne({
+        where: [{ googleId }, { email }],
+      });
+
+      if (user) {
+        // Actualizar info si ya existe
+        if (!user.googleId) user.googleId = googleId;
+        if (!user.picture && picture) user.picture = picture;
+      } else {
+        // Registrar nuevo usuario
+        user = this.userRepository.create({
+          email,
+          name: name,
+          googleId,
+          picture,
+          // Usuarios de Google no tienen password, usamos undefined si la columna permite nulos o es opcional
+          // Si la entidad espera string explícito, habría que revisar la entidad, pero undefined suele ser seguro para 'create'
+        });
+      }
+
+      const savedUser = await this.userRepository.save(user);
+
+      // 4. GENERAR TOKENS DE TU APP (JWT)
+      const tokens = await this.generateTokens(savedUser);
+      savedUser.refreshToken = tokens.refreshToken;
+      await this.userRepository.save(savedUser);
+
+      return {
+        user: this.mapUserToDto(savedUser),
+        tokens,
+      };
+    } catch (error) {
+      console.error('Google Auth Error:', error);
+      throw new UnauthorizedException('Invalid Google Token');
+    }
   }
 
   // ==================== LOGOUT ====================
