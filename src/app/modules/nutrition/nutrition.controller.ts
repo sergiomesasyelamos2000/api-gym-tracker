@@ -219,15 +219,22 @@ export class NutritionController {
     @Body() dto: UpdateFoodEntryDto,
     @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.updateFoodEntry(entryId, dto, user.id);
+    const userId = user?.id || (dto as any).userId;
+    return this.nutritionService.updateFoodEntry(
+      entryId,
+      dto,
+      userId as string,
+    );
   }
 
   @Delete('diary/:entryId')
   async deleteFoodEntry(
     @Param('entryId') entryId: string,
     @CurrentUser() user: CurrentUserData,
+    @Query('userId') fallbackUserId?: string,
   ) {
-    return this.nutritionService.deleteFoodEntry(entryId, user.id);
+    const userId = user?.id || fallbackUserId;
+    return this.nutritionService.deleteFoodEntry(entryId, userId as string);
   }
 
   // ==================== SHOPPING LIST ENDPOINTS ====================
@@ -248,7 +255,12 @@ export class NutritionController {
     @Body() dto: UpdateShoppingListItemDto,
     @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.updateShoppingListItem(itemId, dto, user.id);
+    const userId = user?.id || (dto as any).userId;
+    return this.nutritionService.updateShoppingListItem(
+      itemId,
+      dto,
+      userId as string,
+    );
   }
 
   @Put('shopping-list/:userId/:itemId/toggle')
@@ -263,8 +275,13 @@ export class NutritionController {
   async deleteShoppingListItem(
     @Param('itemId') itemId: string,
     @CurrentUser() user: CurrentUserData,
+    @Query('userId') fallbackUserId?: string,
   ) {
-    return this.nutritionService.deleteShoppingListItem(itemId, user.id);
+    const userId = user?.id || fallbackUserId;
+    return this.nutritionService.deleteShoppingListItem(
+      itemId,
+      userId as string,
+    );
   }
 
   @Delete('shopping-list/:userId/purchased')
@@ -342,15 +359,25 @@ export class NutritionController {
     @Body() dto: UpdateCustomProductDto,
     @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.updateCustomProduct(productId, dto, user.id);
+    const userId = user?.id || dto.userId;
+    return this.nutritionService.updateCustomProduct(
+      productId,
+      dto,
+      userId as string,
+    );
   }
 
   @Delete('custom-products/:productId')
   async deleteCustomProduct(
     @Param('productId') productId: string,
     @CurrentUser() user: CurrentUserData,
+    @Query('userId') fallbackUserId?: string,
   ) {
-    return this.nutritionService.deleteCustomProduct(productId, user.id);
+    const userId = user?.id || fallbackUserId;
+    return this.nutritionService.deleteCustomProduct(
+      productId,
+      userId as string,
+    );
   }
 
   @Get('custom-products/:userId/search')
@@ -387,23 +414,32 @@ export class NutritionController {
     @Body() dto: UpdateCustomMealDto,
     @CurrentUser() user: CurrentUserData,
   ) {
-    return this.nutritionService.updateCustomMeal(mealId, dto, user.id);
+    const userId = user?.id || dto.userId;
+    return this.nutritionService.updateCustomMeal(
+      mealId,
+      dto,
+      userId as string,
+    );
   }
 
   @Delete('custom-meals/:mealId')
   async deleteCustomMeal(
     @Param('mealId') mealId: string,
     @CurrentUser() user: CurrentUserData,
+    @Query('userId') fallbackUserId?: string,
   ) {
-    return this.nutritionService.deleteCustomMeal(mealId, user.id);
+    const userId = user?.id || fallbackUserId;
+    return this.nutritionService.deleteCustomMeal(mealId, userId as string);
   }
 
   @Post('custom-meals/:mealId/duplicate')
   async duplicateCustomMeal(
     @Param('mealId') mealId: string,
     @CurrentUser() user: CurrentUserData,
+    @Query('userId') fallbackUserId?: string,
   ) {
-    return this.nutritionService.duplicateCustomMeal(mealId, user.id);
+    const userId = user?.id || fallbackUserId;
+    return this.nutritionService.duplicateCustomMeal(mealId, userId as string);
   }
 
   @Get('custom-meals/:userId/search')
