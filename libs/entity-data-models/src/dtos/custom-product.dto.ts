@@ -17,6 +17,7 @@ export interface CreateCustomProductDto {
 }
 
 export interface UpdateCustomProductDto {
+  userId?: string;
   name?: string;
   description?: string;
   image?: string;

@@ -19,6 +19,7 @@ export interface CreateCustomMealDto {
 }
 
 export interface UpdateCustomMealDto {
+  userId?: string;
   name?: string;
   description?: string;
   image?: string;
