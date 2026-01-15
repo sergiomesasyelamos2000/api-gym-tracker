@@ -1,18 +1,31 @@
-import { Body, Controller, Get, Post, Put, Param, Req, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
-import { AuthService } from './auth.service';
 import {
-  LoginRequestDto,
-  RegisterRequestDto,
-  GoogleAuthRequestDto,
-  RefreshTokenRequestDto,
-  UpdateUserProfileDto,
   AuthResponseDto,
+  GoogleAuthRequestDto,
+  GoogleLoginDto,
+  LoginRequestDto,
+  RefreshTokenRequestDto,
+  RegisterRequestDto,
+  UpdateUserProfileDto,
   UserResponseDto,
 } from '@app/entity-data-models';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { AuthService } from './auth.service';
+import {
+  CurrentUser,
+  CurrentUserData,
+} from './decorators/current-user.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { CurrentUser, CurrentUserData } from './decorators/current-user.decorator';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -29,23 +42,24 @@ export class AuthController {
 
   @Post('register')
   @ApiOperation({ summary: 'Register new user with email and password' })
-  async register(@Body() userData: RegisterRequestDto): Promise<AuthResponseDto> {
+  async register(
+    @Body() userData: RegisterRequestDto,
+  ): Promise<AuthResponseDto> {
     return this.authService.register(userData);
   }
 
   // ==================== GOOGLE OAUTH ====================
 
-  @Get('google')
-  @UseGuards(AuthGuard('google'))
-  @ApiOperation({ summary: 'Initiate Google OAuth flow' })
-  async googleLogin() {
-    // Passport redirects automatically to Google
-    return;
+  @Post('google/login') // Endpoint recomendado
+  async googleLogin(@Body() body: GoogleLoginDto) {
+    return this.authService.googleLogin(body.token);
   }
 
   @Post('google/callback')
   @ApiOperation({ summary: 'Google OAuth callback' })
-  async googleCallback(@Body() googleData: GoogleAuthRequestDto): Promise<AuthResponseDto> {
+  async googleCallback(
+    @Body() googleData: GoogleAuthRequestDto,
+  ): Promise<AuthResponseDto> {
     return this.authService.googleAuth(googleData);
   }
 
@@ -70,7 +84,9 @@ export class AuthController {
 
   @Post('refresh')
   @ApiOperation({ summary: 'Refresh access token using refresh token' })
-  async refreshToken(@Body() dto: RefreshTokenRequestDto): Promise<AuthResponseDto> {
+  async refreshToken(
+    @Body() dto: RefreshTokenRequestDto,
+  ): Promise<AuthResponseDto> {
     return this.authService.refreshToken(dto);
   }
 
@@ -78,7 +94,9 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout (invalidate refresh token)' })
-  async logout(@CurrentUser() user: CurrentUserData): Promise<{ message: string }> {
+  async logout(
+    @CurrentUser() user: CurrentUserData,
+  ): Promise<{ message: string }> {
     await this.authService.logout(user.id);
     return { message: 'Logout successful' };
   }
@@ -89,7 +107,9 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user profile' })
-  async getCurrentUser(@CurrentUser() user: CurrentUserData): Promise<UserResponseDto> {
+  async getCurrentUser(
+    @CurrentUser() user: CurrentUserData,
+  ): Promise<UserResponseDto> {
     return this.authService.getCurrentUser(user.id);
   }
 
@@ -104,7 +124,7 @@ export class AuthController {
   ): Promise<UserResponseDto> {
     // Ensure user can only update their own profile
     if (userId !== user.id) {
-      throw new Error('Unauthorized: Cannot update another user\'s profile');
+      throw new Error("Unauthorized: Cannot update another user's profile");
     }
 
     return this.authService.updateUserProfile(userId, updates);
