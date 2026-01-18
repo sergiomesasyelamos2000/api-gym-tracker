@@ -2354,6 +2354,9 @@ export class NutritionService {
       where: { id: productId },
     });
 
+    console.log('lo que llega', dto);
+    console.log('lo que encuentra', product);
+
     if (!product) {
       throw new NotFoundException(
         `Producto personalizado no encontrado: ${productId}`,
