@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app/app.module';
 import 'reflect-metadata';
@@ -15,6 +15,13 @@ async function bootstrap() {
   // ✅ Aumentar el límite de tamaño del payload
   app.use(json({ limit: '10mb' })); // Aumenta a 10MB
   app.use(urlencoded({ extended: true, limit: '10mb' }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
 
   app.enableCors({
     origin: true, // Permitir todos los orígenes
