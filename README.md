@@ -2,97 +2,139 @@
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+# Gym Tracker API
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Backend service for the Gym Tracker application, built with [NestJS](https://github.com/nestjs/nest), PostgreSQL, and TypeORM.
 
-## Description
+## 📋 Prerequisites
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- **Node.js** (v18 or higher)
+- **Docker** & **Docker Compose** (Recommended for easy setup)
+- **PostgreSQL** (If running locally without Docker)
 
-## Project setup
+## ⚙️ Configuration
 
-```bash
-$ npm install
+1. Create a `.env` file in the root directory.
+2. Add the required environment variables (see `.env.example` or use the reference below):
+
+```env
+# Server
+PORT=3000
+
+# Database
+DATABASE_HOST=localhost   # 'postgres' if running inside Docker
+DATABASE_PORT=5432
+DATABASE_USER=postgres
+DATABASE_PASSWORD=postgres
+DATABASE_NAME=gym_db
+
+# JWT & Security
+JWT_SECRET=your_super_secret_key
+JWT_EXPIRATION=7d
+
+# APIs
+GEMINI_API_KEY=your_gemini_key
+CLOUDINARY_CLOUD_NAME=...
+CLOUDINARY_API_KEY=...
+CLOUDINARY_API_SECRET=...
 ```
 
-## Compile and run the project
+## 🚀 Running the Project
+
+### Option A: Using Docker (Recommended)
+
+This will spin up the API, PostgreSQL database, and PgAdmin (database UI) in containerized environments.
 
 ```bash
-# development
-$ npm run start
+# Start all services
+docker-compose up --build
 
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+# Stop services
+docker-compose down
 ```
 
-## Run tests
+- **API**: [http://localhost:3000/api](http://localhost:3000/api)
+- **PgAdmin**: [http://localhost:5050](http://localhost:5050) (User/Pass configured in `docker-compose.yml`)
+
+### Option B: Running Locally
+
+1. **Start Database**: Ensure you have a PostgreSQL instance running and credentials match your `.env`.
+2. **Install Dependencies**:
+   ```bash
+   npm install
+   ```
+3. **Run Application**:
+
+   ```bash
+   # Development mode
+   npm run start:dev
+
+   # Production mode
+   npm run start:prod
+   ```
+
+## 🛠️ Database Migrations
+
+This project uses TypeORM Migrations. Automatic synchronization (`synchronize: true`) is **DISABLED** in production to prevent data loss.
+
+### 1. Generate a Migration
+
+When you modify an Entity (e.g., `user.entity.ts`), generate a migration file:
+
+```bash
+# Replace 'MigrationName' with a descriptive name (e.g., AddUserAge)
+npm run migration:generate -- src/migrations/MigrationName
+```
+
+### 2. Run Migrations
+
+Apply pending migrations to the database:
+
+```bash
+npm run migration:run
+```
+
+### 3. Revert Migrations
+
+Undo the last applied migration:
+
+```bash
+npm run migration:revert
+```
+
+## 🚢 Production Deployment
+
+To deploy this application to production:
+
+1. **Build the Docker Image**:
+   Use the provided `Dockerfile` which is optimized for production (multi-stage build).
+
+   ```bash
+   docker build -t gym-tracker-api .
+   ```
+
+2. **Run Container**:
+   Ensure you pass the correct environment variables (especially DB credentials being different from `localhost`).
+
+   ```bash
+   docker run -d -p 3000:3000 --env-file .env gym-tracker-api
+   ```
+
+3. **Run Migrations**:
+   Run migrations against the production database _before_ or _during_ startup. You can run them via the container:
+   ```bash
+   docker exec -it <container_id> npm run migration:run
+   ```
+
+## 🧪 Testing
 
 ```bash
 # unit tests
-$ npm run test
+npm run test
 
 # e2e tests
-$ npm run test:e2e
+npm run test:e2e
 
 # test coverage
-$ npm run test:cov
+npm run test:cov
 ```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).

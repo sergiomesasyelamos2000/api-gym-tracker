@@ -70,7 +70,7 @@ import { ExportService } from './services/export.service';
           CustomMealEntity,
           UserEntity,
         ],
-        synchronize: true,
+        synchronize: configService.get<string>('NODE_ENV') === 'development',
       }),
     }),
     ScheduleModule.forRoot(),
