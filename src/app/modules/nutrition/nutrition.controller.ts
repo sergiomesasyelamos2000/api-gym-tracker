@@ -24,24 +24,32 @@ import {
   Put,
   Query,
   UploadedFile,
-  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth } from '@nestjs/swagger';
 import {
   CurrentUser,
   CurrentUserData,
 } from '../auth/decorators/current-user.decorator';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { NutritionService } from './nutrition.service';
-import { log } from 'console';
+import { ProductService } from './services/product.service';
+import { MealService } from './services/meal.service';
+import { DiaryService } from './services/diary.service';
+import { ShoppingListService } from './services/shopping-list.service';
+import { ProfileService } from './services/profile.service';
 
 @Controller('nutrition')
 // ⚠️ JwtAuthGuard removed temporarily due to token validation issues
 // TODO: Investigate why valid tokens are being rejected and re-enable authentication
 export class NutritionController {
-  constructor(private nutritionService: NutritionService) {}
+  constructor(
+    private nutritionService: NutritionService,
+    private productService: ProductService,
+    private mealService: MealService,
+    private diaryService: DiaryService,
+    private shoppingListService: ShoppingListService,
+    private profileService: ProfileService,
+  ) {}
 
   @Post()
   async chat(
@@ -59,7 +67,6 @@ export class NutritionController {
     if (!file) {
       throw new Error('No se recibió ningún archivo');
     }
-
     const items = await this.nutritionService.recognizeFood(file);
 
     return { items };
@@ -67,7 +74,7 @@ export class NutritionController {
 
   @Post('barcode')
   async scanBarcode(@Body() body: any) {
-    const product = await this.nutritionService.scanCode(body.code);
+    const product = await this.productService.scanCode(body.code);
     return product;
   }
 
@@ -88,7 +95,7 @@ export class NutritionController {
       const pageNum = parseInt(page) || 1;
       const pageSizeNum = parseInt(pageSize) || 20;
 
-      const result = await this.nutritionService.searchProductsByName(
+      const result = await this.productService.searchProductsByName(
         searchTerm.trim(),
         pageNum,
         pageSizeNum,
@@ -113,7 +120,7 @@ export class NutritionController {
       const pageNum = parseInt(page) || 1;
       const pageSizeNum = parseInt(pageSize) || 100;
 
-      const result = await this.nutritionService.getAllProducts(
+      const result = await this.productService.getAllProducts(
         pageNum,
         pageSizeNum,
       );
@@ -131,7 +138,7 @@ export class NutritionController {
   @Get('products/:code')
   async getProductDetail(@Param('code') code: string) {
     try {
-      const product = await this.nutritionService.getProductDetail(code);
+      const product = await this.productService.getProductDetail(code);
       return product;
     } catch (error) {
       console.error('Error en controller getProductDetail:', error);
@@ -143,13 +150,13 @@ export class NutritionController {
 
   @Get('profile/:userId')
   async getUserProfile(@Param('userId') userId: string) {
-    return this.nutritionService.getUserProfile(userId);
+    return this.profileService.getUserProfile(userId);
   }
 
   @Post('profile')
   async createUserProfile(@Body() dto: CreateUserNutritionProfileDto) {
     try {
-      const profile = await this.nutritionService.createUserProfile(dto);
+      const profile = await this.profileService.createUserProfile(dto);
 
       return profile;
     } catch (error) {
@@ -168,7 +175,7 @@ export class NutritionController {
     @Param('userId') userId: string,
     @Body() dto: UpdateUserNutritionProfileDto,
   ) {
-    return this.nutritionService.updateUserProfile(userId, dto);
+    return this.profileService.updateUserProfile(userId, dto);
   }
 
   @Put('profile/:userId/goals')
@@ -176,14 +183,14 @@ export class NutritionController {
     @Param('userId') userId: string,
     @Body() dto: UpdateMacroGoalsDto,
   ) {
-    return this.nutritionService.updateMacroGoals(userId, dto);
+    return this.profileService.updateMacroGoals(userId, dto);
   }
 
   // ==================== FOOD DIARY ENDPOINTS ====================
 
   @Post('diary')
   async addFoodEntry(@Body() dto: CreateFoodEntryDto) {
-    return this.nutritionService.addFoodEntry(dto);
+    return this.diaryService.addFoodEntry(dto);
   }
 
   // IMPORTANT: Specific routes (weekly, monthly) must come BEFORE generic routes (:date)
@@ -193,7 +200,7 @@ export class NutritionController {
     @Param('userId') userId: string,
     @Query('startDate') startDate: string,
   ) {
-    return this.nutritionService.getWeeklySummary(userId, startDate);
+    return this.diaryService.getWeeklySummary(userId, startDate);
   }
 
   @Get('diary/:userId/monthly')
@@ -202,7 +209,7 @@ export class NutritionController {
     @Query('year') year: number,
     @Query('month') month: number,
   ) {
-    return this.nutritionService.getMonthlySummary(userId, year, month);
+    return this.diaryService.getMonthlySummary(userId, year, month);
   }
 
   @Get('diary/:userId/:date')
@@ -210,7 +217,7 @@ export class NutritionController {
     @Param('userId') userId: string,
     @Param('date') date: string,
   ) {
-    return this.nutritionService.getDailyEntries(userId, date);
+    return this.diaryService.getDailyEntries(userId, date);
   }
 
   @Put('diary/:entryId')
@@ -220,11 +227,7 @@ export class NutritionController {
     @CurrentUser() user: CurrentUserData,
   ) {
     const userId = user?.id || (dto as any).userId;
-    return this.nutritionService.updateFoodEntry(
-      entryId,
-      dto,
-      userId as string,
-    );
+    return this.diaryService.updateFoodEntry(entryId, dto, userId as string);
   }
 
   @Delete('diary/:entryId')
@@ -234,19 +237,19 @@ export class NutritionController {
     @Query('userId') fallbackUserId?: string,
   ) {
     const userId = user?.id || fallbackUserId;
-    return this.nutritionService.deleteFoodEntry(entryId, userId as string);
+    return this.diaryService.deleteFoodEntry(entryId, userId as string);
   }
 
   // ==================== SHOPPING LIST ENDPOINTS ====================
 
   @Post('shopping-list')
   async addToShoppingList(@Body() dto: CreateShoppingListItemDto) {
-    return this.nutritionService.addToShoppingList(dto);
+    return this.shoppingListService.addToShoppingList(dto);
   }
 
   @Get('shopping-list/:userId')
   async getShoppingList(@Param('userId') userId: string) {
-    return this.nutritionService.getShoppingList(userId);
+    return this.shoppingListService.getShoppingList(userId);
   }
 
   @Put('shopping-list/:itemId')
@@ -256,7 +259,7 @@ export class NutritionController {
     @CurrentUser() user: CurrentUserData,
   ) {
     const userId = user?.id || (dto as any).userId;
-    return this.nutritionService.updateShoppingListItem(
+    return this.shoppingListService.updateShoppingListItem(
       itemId,
       dto,
       userId as string,
@@ -268,7 +271,7 @@ export class NutritionController {
     @Param('userId') userId: string,
     @Param('itemId') itemId: string,
   ) {
-    return this.nutritionService.togglePurchased(itemId, userId);
+    return this.shoppingListService.togglePurchased(itemId, userId);
   }
 
   @Delete('shopping-list/:itemId')
@@ -278,7 +281,7 @@ export class NutritionController {
     @Query('userId') fallbackUserId?: string,
   ) {
     const userId = user?.id || fallbackUserId;
-    return this.nutritionService.deleteShoppingListItem(
+    return this.shoppingListService.deleteShoppingListItem(
       itemId,
       userId as string,
     );
@@ -286,24 +289,24 @@ export class NutritionController {
 
   @Delete('shopping-list/:userId/purchased')
   async clearPurchasedItems(@Param('userId') userId: string) {
-    return this.nutritionService.clearPurchasedItems(userId);
+    return this.shoppingListService.clearPurchasedItems(userId);
   }
 
   @Delete('shopping-list/:userId/all')
   async clearShoppingList(@Param('userId') userId: string) {
-    return this.nutritionService.clearShoppingList(userId);
+    return this.shoppingListService.clearShoppingList(userId);
   }
 
   // ==================== FAVORITES ENDPOINTS ====================
 
   @Post('favorites')
   async addFavorite(@Body() dto: CreateFavoriteProductDto) {
-    return this.nutritionService.addFavorite(dto);
+    return this.productService.addFavorite(dto);
   }
 
   @Get('favorites/:userId')
   async getFavorites(@Param('userId') userId: string) {
-    return this.nutritionService.getFavorites(userId);
+    return this.productService.getFavorites(userId);
   }
 
   @Get('favorites/:userId/check/:productCode')
@@ -311,7 +314,7 @@ export class NutritionController {
     @Param('userId') userId: string,
     @Param('productCode') productCode: string,
   ) {
-    return this.nutritionService.isFavorite(userId, productCode);
+    return this.productService.isFavorite(userId, productCode);
   }
 
   @Delete('favorites/:userId/product/:productCode')
@@ -319,10 +322,7 @@ export class NutritionController {
     @Param('userId') userId: string,
     @Param('productCode') productCode: string,
   ) {
-    return this.nutritionService.removeFavoriteByProductCode(
-      userId,
-      productCode,
-    );
+    return this.productService.removeFavoriteByProductCode(userId, productCode);
   }
 
   @Get('favorites/:userId/search')
@@ -330,19 +330,19 @@ export class NutritionController {
     @Param('userId') userId: string,
     @Query('query') query: string,
   ) {
-    return this.nutritionService.searchFavorites(userId, query);
+    return this.productService.searchFavorites(userId, query);
   }
 
   // ==================== CUSTOM PRODUCTS ENDPOINTS ====================
 
   @Post('custom-products')
   async createCustomProduct(@Body() dto: CreateCustomProductDto) {
-    return this.nutritionService.createCustomProduct(dto);
+    return this.productService.createCustomProduct(dto);
   }
 
   @Get('custom-products/:userId')
   async getCustomProducts(@Param('userId') userId: string) {
-    return this.nutritionService.getCustomProducts(userId);
+    return this.productService.getCustomProducts(userId);
   }
 
   @Get('custom-products/:userId/:productId')
@@ -350,7 +350,7 @@ export class NutritionController {
     @Param('userId') userId: string,
     @Param('productId') productId: string,
   ) {
-    return this.nutritionService.getCustomProductById(userId, productId);
+    return this.productService.getCustomProductById(userId, productId);
   }
 
   @Put('custom-products/:productId')
@@ -360,7 +360,7 @@ export class NutritionController {
     @CurrentUser() user: CurrentUserData,
   ) {
     const userId = user?.id || dto.userId;
-    return this.nutritionService.updateCustomProduct(
+    return this.productService.updateCustomProduct(
       productId,
       dto,
       userId as string,
@@ -374,10 +374,7 @@ export class NutritionController {
     @Query('userId') fallbackUserId?: string,
   ) {
     const userId = user?.id || fallbackUserId;
-    return this.nutritionService.deleteCustomProduct(
-      productId,
-      userId as string,
-    );
+    return this.productService.deleteCustomProduct(productId, userId as string);
   }
 
   @Get('custom-products/:userId/search')
@@ -385,19 +382,19 @@ export class NutritionController {
     @Param('userId') userId: string,
     @Query('query') query: string,
   ) {
-    return this.nutritionService.searchCustomProducts(userId, query);
+    return this.productService.searchCustomProducts(userId, query);
   }
 
   // ==================== CUSTOM MEALS ENDPOINTS ====================
 
   @Post('custom-meals')
   async createCustomMeal(@Body() dto: CreateCustomMealDto) {
-    return this.nutritionService.createCustomMeal(dto);
+    return this.mealService.createCustomMeal(dto);
   }
 
   @Get('custom-meals/:userId')
   async getCustomMeals(@Param('userId') userId: string) {
-    return this.nutritionService.getCustomMeals(userId);
+    return this.mealService.getCustomMeals(userId);
   }
 
   @Get('custom-meals/:userId/:mealId')
@@ -405,7 +402,7 @@ export class NutritionController {
     @Param('userId') userId: string,
     @Param('mealId') mealId: string,
   ) {
-    return this.nutritionService.getCustomMealById(userId, mealId);
+    return this.mealService.getCustomMealById(userId, mealId);
   }
 
   @Put('custom-meals/:mealId')
@@ -415,11 +412,7 @@ export class NutritionController {
     @CurrentUser() user: CurrentUserData,
   ) {
     const userId = user?.id || dto.userId;
-    return this.nutritionService.updateCustomMeal(
-      mealId,
-      dto,
-      userId as string,
-    );
+    return this.mealService.updateCustomMeal(mealId, dto, userId as string);
   }
 
   @Delete('custom-meals/:mealId')
@@ -429,7 +422,7 @@ export class NutritionController {
     @Query('userId') fallbackUserId?: string,
   ) {
     const userId = user?.id || fallbackUserId;
-    return this.nutritionService.deleteCustomMeal(mealId, userId as string);
+    return this.mealService.deleteCustomMeal(mealId, userId as string);
   }
 
   @Post('custom-meals/:mealId/duplicate')
@@ -439,7 +432,7 @@ export class NutritionController {
     @Query('userId') fallbackUserId?: string,
   ) {
     const userId = user?.id || fallbackUserId;
-    return this.nutritionService.duplicateCustomMeal(mealId, userId as string);
+    return this.mealService.duplicateCustomMeal(mealId, userId as string);
   }
 
   @Get('custom-meals/:userId/search')
@@ -447,6 +440,6 @@ export class NutritionController {
     @Param('userId') userId: string,
     @Query('query') query: string,
   ) {
-    return this.nutritionService.searchCustomMeals(userId, query);
+    return this.mealService.searchCustomMeals(userId, query);
   }
 }
