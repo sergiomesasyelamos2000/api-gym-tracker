@@ -12,6 +12,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { NutritionController } from './nutrition.controller';
 import { NutritionService } from './nutrition.service';
+import { ProductService } from './services/product.service';
+import { MealService } from './services/meal.service';
+import { DiaryService } from './services/diary.service';
+import { ShoppingListService } from './services/shopping-list.service';
+import { ProfileService } from './services/profile.service';
 import { AIService } from '../../services/ai.service';
 import { GeminiProvider } from '../../services/gemini.provider';
 import { GroqProvider } from '../../services/groq.provider';
@@ -19,7 +24,17 @@ import { RoutineModule } from '../routine/routine.module';
 
 @Module({
   controllers: [NutritionController],
-  providers: [NutritionService, AIService, GeminiProvider, GroqProvider],
+  providers: [
+    NutritionService,
+    ProductService,
+    MealService,
+    DiaryService,
+    ShoppingListService,
+    ProfileService,
+    AIService,
+    GeminiProvider,
+    GroqProvider,
+  ],
   imports: [
     HttpModule,
     AuthModule,
