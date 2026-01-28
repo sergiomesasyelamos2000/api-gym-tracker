@@ -1,3 +1,9 @@
+import {
+  ChatResponseDto,
+  RecognizeFoodResponseDto,
+  UserContext,
+  RoutineSessionEntity,
+} from '@app/entity-data-models';
 import { HttpService } from '@nestjs/axios';
 import { Injectable } from '@nestjs/common';
 import { ChatMessage } from '../../services/ai-provider.base';
@@ -20,7 +26,7 @@ export class NutritionService {
     text: string,
     history?: Array<{ role: string; content: string }>,
     userId?: string,
-  ): Promise<any> {
+  ): Promise<ChatResponseDto> {
     try {
       // Build conversation history
       const messages: ChatMessage[] = [];
@@ -29,7 +35,10 @@ export class NutritionService {
       if (history && history.length > 0) {
         history.forEach(msg => {
           messages.push({
-            role: msg.role === 'bot' ? 'assistant' : (msg.role as any),
+            role:
+              msg.role === 'bot'
+                ? 'assistant'
+                : (msg.role as ChatMessage['role']),
             content: msg.content,
           });
         });
@@ -42,7 +51,7 @@ export class NutritionService {
       });
 
       // Get user context if userId provided
-      let userContext: any = undefined;
+      let userContext: UserContext | undefined = undefined;
       if (userId) {
         try {
           // Get nutrition profile
@@ -122,7 +131,7 @@ export class NutritionService {
   }
 
   // Recognition de alimentos
-  async recognizeFood(formData: any): Promise<any> {
+  async recognizeFood(formData: unknown): Promise<RecognizeFoodResponseDto> {
     try {
       //TODO: Descomentado para no gastar tokens de LogMeal API
       /* const segmentation = await lastValueFrom(
@@ -645,9 +654,14 @@ export class NutritionService {
         name: nutritionalInfo.foodName,
         calories: nutritionalInfo.nutritional_info?.calories || null,
         proteins:
-          nutritionalInfo.nutritional_info?.totalNutrients.PROCNT || null,
-        carbs: nutritionalInfo.nutritional_info?.totalNutrients.CHOCDF || null,
-        fats: nutritionalInfo.nutritional_info?.totalNutrients.FAT || null,
+          nutritionalInfo.nutritional_info?.totalNutrients.PROCNT?.quantity ||
+          null,
+        carbs:
+          nutritionalInfo.nutritional_info?.totalNutrients.CHOCDF?.quantity ||
+          null,
+        fats:
+          nutritionalInfo.nutritional_info?.totalNutrients.FAT?.quantity ||
+          null,
         servingSize: nutritionalInfo.serving_size || null,
       };
 
@@ -663,7 +677,7 @@ export class NutritionService {
     }
   }
 
-  private calculateSchedule(sessions: any[]): {
+  private calculateSchedule(sessions: RoutineSessionEntity[]): {
     frequentDays: string[];
     preferredTime: string;
   } {

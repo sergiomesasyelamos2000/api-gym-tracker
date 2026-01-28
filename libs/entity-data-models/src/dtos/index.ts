@@ -9,3 +9,6 @@ export * from './favorite-product.dto';
 export * from './custom-product.dto';
 export * from './custom-meal.dto';
 export * from './google-auth.dto';
+export * from './external-api.model';
+export * from './chat.dto';
+export * from './recognition.dto';

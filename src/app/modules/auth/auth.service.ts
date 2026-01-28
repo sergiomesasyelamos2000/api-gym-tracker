@@ -333,7 +333,10 @@ export class AuthService {
   }
 
   // Legacy method for OAuth (Google/Apple) - kept for backward compatibility
-  async validateOAuthLogin(user: any, provider: string): Promise<any> {
+  async validateOAuthLogin(
+    user: UserEntity,
+    provider: string,
+  ): Promise<{ accessToken: string; user: UserEntity }> {
     const payload = {
       sub: user.id,
       email: user.email,
@@ -349,9 +352,12 @@ export class AuthService {
   // Legacy method for Google token validation - kept for backward compatibility
   async validateGoogleAccessToken(
     accessToken: string,
-    userInfo: any,
-  ): Promise<any> {
+    userInfo: { email: string; name: string; id: string; picture?: string },
+  ): Promise<AuthResponseDto> {
     // This is now handled by googleAuth method
-    return this.googleAuth({ accessToken, userInfo });
+    return this.googleAuth({
+      accessToken,
+      userInfo,
+    });
   }
 }

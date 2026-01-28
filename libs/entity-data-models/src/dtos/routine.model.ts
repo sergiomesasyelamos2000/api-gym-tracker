@@ -1,10 +1,40 @@
-import { ExerciseRequestDto } from './exercise.model';
+import { ExerciseRequestDto, ExerciseResponseDto } from './exercise.model';
 
 export interface RoutineRequestDto {
   title: string;
   createdAt: Date;
   updatedAt?: Date;
   exercises: ExerciseRequestDto[];
+}
+
+export interface SetResponseDto {
+  id: string;
+  order: number;
+  weight: number;
+  reps: number;
+  repsMin?: number;
+  repsMax?: number;
+  completed?: boolean;
+  weightUnit?: 'kg' | 'lbs';
+  repsType?: 'reps' | 'range';
+}
+
+export interface RoutineExerciseNote {
+  id: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface RoutineExerciseResponseDto {
+  id: string;
+  exercise: ExerciseResponseDto;
+  sets: SetResponseDto[];
+  notes?: RoutineExerciseNote[];
+  restSeconds?: string;
+  weightUnit: 'kg' | 'lbs';
+  repsType: 'reps' | 'range';
+  order: number;
+  supersetWith?: string | null;
 }
 
 export interface RoutineResponseDto {
@@ -16,7 +46,7 @@ export interface RoutineResponseDto {
   isPublic: boolean;
   createdAt: Date;
   updatedAt: Date;
-  routineExercises: any[];
+  routineExercises: RoutineExerciseResponseDto[];
   userId?: string;
   category?: string;
   difficulty?: string;

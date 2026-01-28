@@ -7,6 +7,9 @@ export interface MealProductDto {
   protein: number;
   carbs: number;
   fat: number;
+  sugar?: number | null;
+  fiber?: number | null;
+  sodium?: number | null;
   isCustom?: boolean;
 }
 
@@ -37,6 +40,9 @@ export interface CustomMealResponseDto {
   totalProtein: number;
   totalCarbs: number;
   totalFat: number;
+  totalSugar?: number | null;
+  totalFiber?: number | null;
+  totalSodium?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }

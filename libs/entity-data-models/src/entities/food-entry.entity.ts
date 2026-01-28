@@ -58,6 +58,15 @@ export class FoodEntryEntity {
   @Column({ type: 'decimal', precision: 8, scale: 2 })
   fat!: number;
 
+  @Column({ type: 'decimal', precision: 8, scale: 2, nullable: true })
+  sugar?: number;
+
+  @Column({ type: 'decimal', precision: 8, scale: 2, nullable: true })
+  fiber?: number;
+
+  @Column({ type: 'decimal', precision: 8, scale: 2, nullable: true })
+  sodium?: number;
+
   @CreateDateColumn()
   createdAt!: Date;
 

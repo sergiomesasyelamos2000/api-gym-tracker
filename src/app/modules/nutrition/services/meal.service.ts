@@ -40,6 +40,9 @@ export class MealService {
         totalProtein: totals.protein,
         totalCarbs: totals.carbs,
         totalFat: totals.fat,
+        totalSugar: totals.sugar,
+        totalFiber: totals.fiber,
+        totalSodium: totals.sodium,
       });
 
       const saved = await this.customMealRepo.save(meal);
@@ -118,6 +121,9 @@ export class MealService {
       meal.totalProtein = totals.protein;
       meal.totalCarbs = totals.carbs;
       meal.totalFat = totals.fat;
+      meal.totalSugar = totals.sugar;
+      meal.totalFiber = totals.fiber;
+      meal.totalSodium = totals.sodium;
     }
 
     const updated = await this.customMealRepo.save(meal);
@@ -170,6 +176,9 @@ export class MealService {
       totalProtein: originalMeal.totalProtein,
       totalCarbs: originalMeal.totalCarbs,
       totalFat: originalMeal.totalFat,
+      totalSugar: originalMeal.totalSugar,
+      totalFiber: originalMeal.totalFiber,
+      totalSodium: originalMeal.totalSodium,
     });
 
     const saved = await this.customMealRepo.save(duplicatedMeal);
@@ -240,6 +249,9 @@ export class MealService {
       totalProtein: Number(meal.totalProtein),
       totalCarbs: Number(meal.totalCarbs),
       totalFat: Number(meal.totalFat),
+      totalSugar: meal.totalSugar ? Number(meal.totalSugar) : null,
+      totalFiber: meal.totalFiber ? Number(meal.totalFiber) : null,
+      totalSodium: meal.totalSodium ? Number(meal.totalSodium) : null,
       createdAt: meal.createdAt,
       updatedAt: meal.updatedAt,
     };
@@ -250,6 +262,9 @@ export class MealService {
     protein: number;
     carbs: number;
     fat: number;
+    sugar: number;
+    fiber: number;
+    sodium: number;
   } {
     return products.reduce(
       (totals, product) => ({
@@ -257,8 +272,19 @@ export class MealService {
         protein: totals.protein + Number(product.protein),
         carbs: totals.carbs + Number(product.carbs),
         fat: totals.fat + Number(product.fat),
+        sugar: totals.sugar + (product.sugar ? Number(product.sugar) : 0),
+        fiber: totals.fiber + (product.fiber ? Number(product.fiber) : 0),
+        sodium: totals.sodium + (product.sodium ? Number(product.sodium) : 0),
       }),
-      { calories: 0, protein: 0, carbs: 0, fat: 0 },
+      {
+        calories: 0,
+        protein: 0,
+        carbs: 0,
+        fat: 0,
+        sugar: 0,
+        fiber: 0,
+        sodium: 0,
+      },
     );
   }
 

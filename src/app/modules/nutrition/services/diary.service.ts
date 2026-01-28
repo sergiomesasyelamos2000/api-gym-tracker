@@ -100,6 +100,9 @@ export class DiaryService {
     if (dto.protein !== undefined) entry.protein = dto.protein;
     if (dto.carbs !== undefined) entry.carbs = dto.carbs;
     if (dto.fat !== undefined) entry.fat = dto.fat;
+    if (dto.sugar !== undefined) entry.sugar = dto.sugar;
+    if (dto.fiber !== undefined) entry.fiber = dto.fiber;
+    if (dto.sodium !== undefined) entry.sodium = dto.sodium;
 
     const updated = await this.foodEntryRepo.save(entry);
     return this.mapFoodEntryToDto(updated);
@@ -169,8 +172,19 @@ export class DiaryService {
         protein: acc.protein + Number(entry.protein),
         carbs: acc.carbs + Number(entry.carbs),
         fat: acc.fat + Number(entry.fat),
+        sugar: acc.sugar + (entry.sugar ? Number(entry.sugar) : 0),
+        fiber: acc.fiber + (entry.fiber ? Number(entry.fiber) : 0),
+        sodium: acc.sodium + (entry.sodium ? Number(entry.sodium) : 0),
       }),
-      { calories: 0, protein: 0, carbs: 0, fat: 0 },
+      {
+        calories: 0,
+        protein: 0,
+        carbs: 0,
+        fat: 0,
+        sugar: 0,
+        fiber: 0,
+        sodium: 0,
+      },
     );
   }
 
@@ -193,6 +207,9 @@ export class DiaryService {
       protein: Number(entry.protein),
       carbs: Number(entry.carbs),
       fat: Number(entry.fat),
+      sugar: entry.sugar ? Number(entry.sugar) : undefined,
+      fiber: entry.fiber ? Number(entry.fiber) : undefined,
+      sodium: entry.sodium ? Number(entry.sodium) : undefined,
       createdAt: entry.createdAt,
     };
   }
