@@ -11,6 +11,7 @@ import {
   UpdateMacroGoalsDto,
   UpdateShoppingListItemDto,
   UpdateUserNutritionProfileDto,
+  BarcodeScanDto,
 } from '@app/entity-data-models';
 import {
   BadRequestException,
@@ -73,7 +74,7 @@ export class NutritionController {
   }
 
   @Post('barcode')
-  async scanBarcode(@Body() body: any) {
+  async scanBarcode(@Body() body: BarcodeScanDto) {
     const product = await this.productService.scanCode(body.code);
     return product;
   }
@@ -226,7 +227,7 @@ export class NutritionController {
     @Body() dto: UpdateFoodEntryDto,
     @CurrentUser() user: CurrentUserData,
   ) {
-    const userId = user?.id || (dto as any).userId;
+    const userId = user?.id || dto.userId;
     return this.diaryService.updateFoodEntry(entryId, dto, userId as string);
   }
 
@@ -258,7 +259,7 @@ export class NutritionController {
     @Body() dto: UpdateShoppingListItemDto,
     @CurrentUser() user: CurrentUserData,
   ) {
-    const userId = user?.id || (dto as any).userId;
+    const userId = user?.id || dto.userId;
     return this.shoppingListService.updateShoppingListItem(
       itemId,
       dto,

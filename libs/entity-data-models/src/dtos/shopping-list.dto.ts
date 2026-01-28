@@ -10,6 +10,7 @@ export interface CreateShoppingListItemDto {
 }
 
 export interface UpdateShoppingListItemDto {
+  userId?: string;
   quantity?: number;
   unit?: 'gram' | 'ml' | 'portion' | 'custom';
   customUnitName?: string;

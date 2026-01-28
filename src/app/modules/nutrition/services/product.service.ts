@@ -6,6 +6,9 @@ import {
   CreateFavoriteProductDto,
   FavoriteProductEntity,
   FavoriteProductResponseDto,
+  MappedProduct,
+  OpenFoodFactsProduct,
+  OpenFoodFactsResponse,
 } from '@app/entity-data-models';
 import { HttpService } from '@nestjs/axios';
 import { Injectable, NotFoundException } from '@nestjs/common';
@@ -27,7 +30,7 @@ export class ProductService {
 
   // ==================== OPEN FOOD FACTS METHODS ====================
 
-  async scanCode(code: string): Promise<any> {
+  async scanCode(code: string): Promise<MappedProduct> {
     try {
       const response = await lastValueFrom(
         this.httpService.get(
@@ -39,7 +42,7 @@ export class ProductService {
           },
         ),
       );
-      const product = response.data.product;
+      const product = response.data.product as OpenFoodFactsProduct;
 
       if (!product) {
         throw new NotFoundException(
@@ -133,7 +136,7 @@ export class ProductService {
     searchTerm: string,
     page: number = 1,
     pageSize: number = 20,
-  ): Promise<{ products: any[]; total: number }> {
+  ): Promise<{ products: MappedProduct[]; total: number }> {
     try {
       // Marcas de supermercados españoles para búsqueda prioritaria
       const spanishBrands = [
@@ -152,7 +155,7 @@ export class ProductService {
         searchTerm.toLowerCase().includes(brand),
       );
 
-      let allProducts: any[] = [];
+      let allProducts: OpenFoodFactsProduct[] = [];
       const productCodes = new Set<string>(); // Para evitar duplicados
 
       // Estrategia 1: Búsqueda general sin restricción de país (más resultados)
@@ -176,8 +179,9 @@ export class ProductService {
           ),
         );
 
-        const generalProducts = generalResponse.data.products || [];
-        generalProducts.forEach((product: any) => {
+        const generalProducts =
+          (generalResponse.data.products as OpenFoodFactsProduct[]) || [];
+        generalProducts.forEach((product: OpenFoodFactsProduct) => {
           if (!productCodes.has(product.code)) {
             allProducts.push(product);
             productCodes.add(product.code);
@@ -216,8 +220,9 @@ export class ProductService {
                 ),
               );
 
-              const brandProducts = brandResponse.data.products || [];
-              brandProducts.forEach((product: any) => {
+              const brandProducts =
+                (brandResponse.data.products as OpenFoodFactsProduct[]) || [];
+              brandProducts.forEach((product: OpenFoodFactsProduct) => {
                 if (!productCodes.has(product.code)) {
                   allProducts.push(product);
                   productCodes.add(product.code);
@@ -234,7 +239,7 @@ export class ProductService {
 
       // Filtrar y mapear productos
       const mappedProducts = allProducts
-        .filter((product: any) => {
+        .filter((product: OpenFoodFactsProduct) => {
           const hasValidName = product.product_name_es || product.product_name;
           const hasCompleteNutrition =
             product.nutriments &&
@@ -246,32 +251,40 @@ export class ProductService {
 
           return hasValidName && hasCompleteNutrition && hasValidCode;
         })
-        .map((product: any) => ({
-          code: product.code,
-          name:
-            product.product_name_es ??
-            product.product_name ??
-            'Producto sin nombre',
-          brand: product.brands ?? null,
-          image: product.image_url ?? null,
-          nutritionGrade: product.nutrition_grades ?? null,
-          categories: product.categories ?? null,
-          grams: 100,
-          calories: Math.round(product.nutriments['energy-kcal_100g'] ?? 0),
-          carbohydrates:
-            Math.round((product.nutriments['carbohydrates_100g'] ?? 0) * 10) /
-            10,
-          protein:
-            Math.round((product.nutriments['proteins_100g'] ?? 0) * 10) / 10,
-          fat: Math.round((product.nutriments['fat_100g'] ?? 0) * 10) / 10,
-          fiber: product.nutriments['fiber_100g']
-            ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
-            : null,
-          sugar: product.nutriments['sugars_100g']
-            ? Math.round(product.nutriments['sugars_100g'] * 10) / 10
-            : null,
-        }))
-        .sort((a: any, b: any) => {
+        .map(
+          (product: OpenFoodFactsProduct): MappedProduct => ({
+            code: product.code,
+            name:
+              product.product_name_es ??
+              product.product_name ??
+              'Producto sin nombre',
+            brand: product.brands ?? null,
+            image: product.image_url ?? null,
+            nutritionGrade: product.nutrition_grades ?? null,
+            categories: product.categories ?? null,
+            grams: 100,
+            calories: Math.round(product.nutriments?.['energy-kcal_100g'] ?? 0),
+            carbohydrates:
+              Math.round(
+                (product.nutriments?.['carbohydrates_100g'] ?? 0) * 10,
+              ) / 10,
+            protein:
+              Math.round((product.nutriments?.['proteins_100g'] ?? 0) * 10) /
+              10,
+            fat: Math.round((product.nutriments?.['fat_100g'] ?? 0) * 10) / 10,
+            fiber: product.nutriments?.['fiber_100g']
+              ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
+              : null,
+            sugar: product.nutriments?.['sugars_100g']
+              ? Math.round(product.nutriments['sugars_100g'] * 10) / 10
+              : null,
+            sodium: product.nutriments?.['sodium_100g']
+              ? Math.round(product.nutriments['sodium_100g'] * 1000) / 10
+              : null,
+            others: [],
+          }),
+        )
+        .sort((a: MappedProduct, b: MappedProduct) => {
           const aIsSpanish = spanishBrands.some(brand =>
             a.brand?.toLowerCase().includes(brand),
           );
@@ -301,7 +314,7 @@ export class ProductService {
   async getAllProducts(
     page: number = 1,
     pageSize: number = 100,
-  ): Promise<{ products: any[]; total: number }> {
+  ): Promise<{ products: MappedProduct[]; total: number }> {
     try {
       const response = await lastValueFrom(
         this.httpService.get(
@@ -319,7 +332,7 @@ export class ProductService {
         ),
       );
 
-      const products = response.data.products || [];
+      const products = (response.data.products as OpenFoodFactsProduct[]) || [];
       const spanishBrands = [
         'hacendado',
         'dia',
@@ -332,7 +345,7 @@ export class ProductService {
       ];
 
       const mappedProducts = products
-        .filter((product: any) => {
+        .filter((product: OpenFoodFactsProduct) => {
           const hasValidName = product.product_name_es || product.product_name;
           const hasCompleteNutrition =
             product.nutriments &&
@@ -344,59 +357,63 @@ export class ProductService {
 
           return hasValidName && hasCompleteNutrition && hasValidCode;
         })
-        .map((product: any) => ({
-          code: product.code,
-          name:
-            product.product_name_es ??
-            product.product_name ??
-            'Producto sin nombre',
-          brand: product.brands ?? null,
-          image: product.image_url ?? null,
-          nutritionGrade: product.nutrition_grades ?? null,
-          categories: product.categories ?? null,
-          grams: 100,
-          calories: Math.round(product.nutriments['energy-kcal_100g'] ?? 0),
-          carbohydrates:
-            Math.round((product.nutriments['carbohydrates_100g'] ?? 0) * 10) /
-            10,
-          protein:
-            Math.round((product.nutriments['proteins_100g'] ?? 0) * 10) / 10,
-          fat: Math.round((product.nutriments['fat_100g'] ?? 0) * 10) / 10,
-          fiber: product.nutriments['fiber_100g']
-            ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
-            : null,
-          sugar: product.nutriments['sugars_100g']
-            ? Math.round(product.nutriments['sugars_100g'] * 10) / 10
-            : null,
-          sodium: product.nutriments['sodium_100g']
-            ? Math.round(product.nutriments['sodium_100g'] * 1000) / 10
-            : null,
-          others: Object.entries(product.nutriments ?? {})
-            .filter(
-              ([key]) =>
-                ![
-                  'energy-kcal',
-                  'energy-kcal_100g',
-                  'energy',
-                  'energy_100g',
-                  'carbohydrates',
-                  'carbohydrates_100g',
-                  'proteins',
-                  'proteins_100g',
-                  'fat',
-                  'fat_100g',
-                  'fiber_100g',
-                  'sugars_100g',
-                  'sodium_100g',
-                  'nova',
-                ].some(main => key.startsWith(main)),
-            )
-            .map(([key, value]) => ({
-              label: NUTRIENT_LABELS_ES[key] ?? key,
-              value,
-            })),
-        }))
-        .sort((a: any, b: any) => {
+        .map(
+          (product: OpenFoodFactsProduct): MappedProduct => ({
+            code: product.code,
+            name:
+              product.product_name_es ??
+              product.product_name ??
+              'Producto sin nombre',
+            brand: product.brands ?? null,
+            image: product.image_url ?? null,
+            nutritionGrade: product.nutrition_grades ?? null,
+            categories: product.categories ?? null,
+            grams: 100,
+            calories: Math.round(product.nutriments?.['energy-kcal_100g'] ?? 0),
+            carbohydrates:
+              Math.round(
+                (product.nutriments?.['carbohydrates_100g'] ?? 0) * 10,
+              ) / 10,
+            protein:
+              Math.round((product.nutriments?.['proteins_100g'] ?? 0) * 10) /
+              10,
+            fat: Math.round((product.nutriments?.['fat_100g'] ?? 0) * 10) / 10,
+            fiber: product.nutriments?.['fiber_100g']
+              ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
+              : null,
+            sugar: product.nutriments?.['sugars_100g']
+              ? Math.round(product.nutriments['sugars_100g'] * 10) / 10
+              : null,
+            sodium: product.nutriments?.['sodium_100g']
+              ? Math.round(product.nutriments['sodium_100g'] * 1000) / 10
+              : null,
+            others: Object.entries(product.nutriments ?? {})
+              .filter(
+                ([key]) =>
+                  ![
+                    'energy-kcal',
+                    'energy-kcal_100g',
+                    'energy',
+                    'energy_100g',
+                    'carbohydrates',
+                    'carbohydrates_100g',
+                    'proteins',
+                    'proteins_100g',
+                    'fat',
+                    'fat_100g',
+                    'fiber_100g',
+                    'sugars_100g',
+                    'sodium_100g',
+                    'nova',
+                  ].some(main => key.startsWith(main)),
+              )
+              .map(([key, value]) => ({
+                label: NUTRIENT_LABELS_ES[key] ?? key,
+                value,
+              })),
+          }),
+        )
+        .sort((a: MappedProduct, b: MappedProduct) => {
           const aIsSpanish = spanishBrands.some(brand =>
             a.brand?.toLowerCase().includes(brand),
           );
@@ -423,7 +440,7 @@ export class ProductService {
     }
   }
 
-  async getProductDetail(code: string): Promise<any> {
+  async getProductDetail(code: string): Promise<MappedProduct> {
     try {
       const response = await lastValueFrom(
         this.httpService.get(
@@ -435,8 +452,7 @@ export class ProductService {
           },
         ),
       );
-
-      const product = response.data.product;
+      const product = response.data.product as OpenFoodFactsProduct;
 
       if (!product) {
         throw new NotFoundException(
@@ -444,7 +460,7 @@ export class ProductService {
         );
       }
 
-      const mappedProduct = {
+      const mappedProduct: MappedProduct = {
         code: product.code,
         name:
           product.product_name_es ??
@@ -514,7 +530,7 @@ export class ProductService {
           )
           .map(([key, value]) => ({
             label: NUTRIENT_LABELS_ES[key] ?? key,
-            value,
+            value: value as string | number,
           })),
       };
 

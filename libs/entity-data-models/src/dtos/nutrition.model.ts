@@ -208,9 +208,25 @@ export class CreateFoodEntryDto {
 
   @IsNumber()
   fat!: number;
+
+  @IsOptional()
+  @IsNumber()
+  sugar?: number;
+
+  @IsOptional()
+  @IsNumber()
+  fiber?: number;
+
+  @IsOptional()
+  @IsNumber()
+  sodium?: number;
 }
 
 export class UpdateFoodEntryDto {
+  @IsOptional()
+  @IsString()
+  userId?: string;
+
   @IsOptional()
   @IsNumber()
   quantity?: number;
@@ -246,6 +262,18 @@ export class UpdateFoodEntryDto {
   @IsOptional()
   @IsNumber()
   fat?: number;
+
+  @IsOptional()
+  @IsNumber()
+  sugar?: number;
+
+  @IsOptional()
+  @IsNumber()
+  fiber?: number;
+
+  @IsOptional()
+  @IsNumber()
+  sodium?: number;
 }
 
 export class FoodEntryResponseDto {
@@ -264,6 +292,9 @@ export class FoodEntryResponseDto {
   protein!: number;
   carbs!: number;
   fat!: number;
+  sugar?: number;
+  fiber?: number;
+  sodium?: number;
   createdAt!: Date;
 }
 
@@ -276,6 +307,9 @@ export class DailyNutritionSummaryDto {
     protein: number;
     carbs: number;
     fat: number;
+    sugar: number;
+    fiber: number;
+    sodium: number;
   };
   goals!: {
     dailyCalories: number;
@@ -284,4 +318,9 @@ export class DailyNutritionSummaryDto {
     fat: number;
   };
   hasProfile!: boolean;
+}
+
+export class BarcodeScanDto {
+  @IsString()
+  code!: string;
 }

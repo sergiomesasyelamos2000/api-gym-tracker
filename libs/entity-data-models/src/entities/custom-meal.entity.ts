@@ -15,6 +15,9 @@ export interface MealProduct {
   protein: number;
   carbs: number;
   fat: number;
+  sugar?: number | null;
+  fiber?: number | null;
+  sodium?: number | null;
   isCustom?: boolean;
 }
 
@@ -49,6 +52,15 @@ export class CustomMealEntity {
 
   @Column({ type: 'decimal', precision: 8, scale: 2 })
   totalFat!: number;
+
+  @Column({ type: 'decimal', precision: 8, scale: 2, nullable: true })
+  totalSugar?: number | null;
+
+  @Column({ type: 'decimal', precision: 8, scale: 2, nullable: true })
+  totalFiber?: number | null;
+
+  @Column({ type: 'decimal', precision: 8, scale: 2, nullable: true })
+  totalSodium?: number | null;
 
   @CreateDateColumn()
   createdAt!: Date;

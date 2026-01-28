@@ -1,7 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import {
   ExerciseEntity,
   RoutineEntity,
@@ -255,7 +251,7 @@ export class RoutineService {
 
       // Crear sets (igual que en create/update)
       if (re.sets && re.sets.length > 0) {
-        const sets = re.sets.map((set: any) => {
+        const sets = re.sets.map((set: SetEntity) => {
           // 🔥 Crear el objeto set igual que en create/update
           return this.setRepository.create({
             order: set.order,

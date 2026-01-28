@@ -19,6 +19,39 @@ import { Repository } from 'typeorm';
 
 const sharp = require('sharp');
 
+interface ExerciseDbItem {
+  name: string;
+  gifUrl?: string;
+  videoUrl?: string;
+  targetMuscles?: string[];
+  bodyParts?: string[];
+  equipments?: string[];
+  secondaryMuscles?: string[];
+  instructions?: string[];
+  exerciseType?: string;
+  keywords?: string[];
+  exerciseTips?: string[];
+  variations?: string[];
+  overview?: string;
+  relatedExerciseIds?: string[];
+  imageUrl?: string;
+}
+
+interface BodyPartItem {
+  name: string;
+  imageUrl?: string;
+}
+
+interface EquipmentItem {
+  name: string;
+  imageUrl?: string;
+}
+
+interface ExerciseTypeItem {
+  name: string;
+  imageUrl?: string;
+}
+
 @Injectable()
 export class ExercisesService implements OnModuleInit {
   private readonly logger = new Logger(ExercisesService.name);
@@ -195,7 +228,7 @@ export class ExercisesService implements OnModuleInit {
       this.logger.log('📡 Obteniendo ejercicios desde ExerciseDB...');
 
       // 🔄 Implementar paginación para obtener TODOS los ejercicios
-      let allExercises: any[] = [];
+      let allExercises: ExerciseDbItem[] = [];
       let offset = 0;
       const limit = 100; // Cantidad por página
       let hasMore = true;
@@ -230,7 +263,7 @@ export class ExercisesService implements OnModuleInit {
         }
 
         // Intentar extraer el array de ejercicios de diferentes formas
-        let batchData: any[];
+        let batchData: ExerciseDbItem[];
 
         if (Array.isArray(responseData)) {
           // Si response.data ya es un array
@@ -305,7 +338,7 @@ export class ExercisesService implements OnModuleInit {
         const batch = allExercises.slice(i, i + batchSize);
 
         const batchEntities = await Promise.all(
-          batch.map(async (item: any) => {
+          batch.map(async (item: ExerciseDbItem) => {
             return await this.mapToExerciseEntity(item);
           }),
         );
@@ -347,7 +380,9 @@ export class ExercisesService implements OnModuleInit {
     }
   }
 
-  private async mapToExerciseEntity(data: any): Promise<ExerciseEntity> {
+  private async mapToExerciseEntity(
+    data: ExerciseDbItem,
+  ): Promise<ExerciseEntity> {
     const { v4: uuidv4 } = await import('uuid');
     const entity = new ExerciseEntity();
 
@@ -541,7 +576,7 @@ export class ExercisesService implements OnModuleInit {
         const batch = bodyParts.slice(i, i + batchSize);
 
         const batchEntities = await Promise.all(
-          batch.map(async (item: any) => {
+          batch.map(async (item: BodyPartItem) => {
             const { v4: uuidv4 } = await import('uuid');
 
             // 🔥 Usar el mismo método de traducción que syncWithExerciseDB
@@ -614,7 +649,7 @@ export class ExercisesService implements OnModuleInit {
         const batch = equipments.slice(i, i + batchSize);
 
         const batchEntities = await Promise.all(
-          batch.map(async (item: any) => {
+          batch.map(async (item: EquipmentItem) => {
             const { v4: uuidv4 } = await import('uuid');
 
             // 🔥 Usar el mismo método de traducción que syncWithExerciseDB
@@ -691,7 +726,7 @@ export class ExercisesService implements OnModuleInit {
         const batch = exerciseTypes.slice(i, i + batchSize);
 
         const batchEntities = await Promise.all(
-          batch.map(async (item: any) => {
+          batch.map(async (item: ExerciseTypeItem) => {
             const { v4: uuidv4 } = await import('uuid');
 
             // 🔥 Usar el mismo método de traducción que syncWithExerciseDB
