@@ -73,34 +73,76 @@ docker-compose down
    npm run start:prod
    ```
 
-## 🛠️ Database Migrations
+## 🛠️ Database Migrations (Automated)
 
-This project uses TypeORM Migrations. Automatic synchronization (`synchronize: true`) is **DISABLED** in production to prevent data loss.
+This project uses an **automated migration system** that combines the best of both worlds:
 
-### 1. Generate a Migration
+### 🔄 How It Works
 
-When you modify an Entity (e.g., `user.entity.ts`), generate a migration file:
+#### Development Mode (Local)
+
+- **`synchronize: true`** is enabled in development
+- Database schema updates **automatically** when you modify entities
+- No manual migration generation needed during development
+- Fast iteration and prototyping ✅
+
+#### Production/Deployment Mode
+
+- **Pre-commit hook** automatically detects entity changes
+- Generates migrations **before you commit**
+- Migrations are version-controlled and safe for production
+- Database changes are tracked and reversible ✅
+
+### 📝 What You Need to Do
+
+**During Development:**
 
 ```bash
-# Replace 'MigrationName' with a descriptive name (e.g., AddUserAge)
+# Just start Docker and code!
+docker-compose up
+
+# Modify your entities (e.g., add a new column)
+# Database updates automatically - no action needed! 🎉
+```
+
+**Before Committing:**
+
+```bash
+# When you commit changes to entity files:
+git add .
+git commit -m "Added new field to User entity"
+
+# The pre-commit hook will:
+# 1. Detect entity changes
+# 2. Auto-generate migration if needed
+# 3. Add migration to your commit
+# All automatic! ✅
+```
+
+### 🔧 Manual Migration Commands (Optional)
+
+If you need to manually manage migrations:
+
+```bash
+# Check if migrations are needed
+npm run migration:check
+
+# Generate a migration manually
 npm run migration:generate -- src/migrations/MigrationName
-```
 
-### 2. Run Migrations
-
-Apply pending migrations to the database:
-
-```bash
+# Run pending migrations
 npm run migration:run
-```
 
-### 3. Revert Migrations
-
-Undo the last applied migration:
-
-```bash
+# Revert last migration
 npm run migration:revert
 ```
+
+### ⚠️ Important Notes
+
+- **Development**: `synchronize: true` means your local DB updates automatically
+- **Production**: Always uses migrations (synchronize is disabled)
+- **Pre-commit hook**: Automatically generates migrations when you modify `.entity.ts` files
+- **No manual work needed**: The system handles everything for you!
 
 ## 🚢 Production Deployment
 

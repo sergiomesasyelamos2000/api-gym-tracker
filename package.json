@@ -25,7 +25,9 @@
     "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli",
     "migration:generate": "npm run typeorm -- -d typeorm.config.ts migration:generate",
     "migration:run": "npm run typeorm -- -d typeorm.config.ts migration:run",
-    "migration:revert": "npm run typeorm -- -d typeorm.config.ts migration:revert"
+    "migration:revert": "npm run typeorm -- -d typeorm.config.ts migration:revert",
+    "migration:check": "node scripts/check-migrations.js",
+    "prepare": "husky"
   },
   "dependencies": {
     "@google-cloud/translate": "^9.2.1",
@@ -86,6 +88,7 @@
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^16.0.0",
+    "husky": "^9.1.7",
     "jest": "^29.7.0",
     "prettier": "^3.4.2",
     "run-script-webpack-plugin": "^0.2.3",
