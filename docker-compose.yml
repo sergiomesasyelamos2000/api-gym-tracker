@@ -17,7 +17,7 @@ services:
     environment:
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
-    command: sh -c "npm run migration:run && npm run start:dev"
+    command: sh -c "npm run migration:run || true && npm run start:dev"
 
   postgres:
     image: postgres:15-alpine
