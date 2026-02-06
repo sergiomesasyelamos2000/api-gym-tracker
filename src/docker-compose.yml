@@ -14,14 +14,6 @@ services:
       - .env
     depends_on:
       - postgres
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 2G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
     environment:
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
@@ -42,23 +34,10 @@ services:
       - 'log_statement=none'
       - '-c'
       - 'log_duration=off'
-      - '-c'
-      - 'max_connections=200'
-      - '-c'
-      - 'shared_buffers=256MB'
     ports:
       - '5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:7-alpine
-    restart: always
-    ports:
-      - '6379:6379'
-    volumes:
-      - redis_data:/data
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
 
   pgadmin:
     image: dpage/pgadmin4
@@ -84,7 +63,7 @@ services:
     depends_on:
       - api
       - influxdb
-    command: run /scripts/stress-test.js
+    command: run /scripts/smoke-test.js
     profiles:
       - testing
 
@@ -123,6 +102,5 @@ services:
 
 volumes:
   postgres_data:
-  redis_data:
   influxdb_data:
   grafana_data:

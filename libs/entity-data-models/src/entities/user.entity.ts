@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -24,9 +25,11 @@ export class UserEntity {
   picture?: string;
 
   @Column({ nullable: true })
+  @Index()
   googleId?: string;
 
   @Column({ nullable: true })
+  @Index()
   appleId?: string;
 
   @Column({ nullable: true })

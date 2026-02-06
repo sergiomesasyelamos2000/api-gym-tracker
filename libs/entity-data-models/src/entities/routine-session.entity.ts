@@ -2,12 +2,14 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { RoutineEntity } from './routine.entity';
 
 @Entity()
+@Index(['routine', 'createdAt'])
 export class RoutineSessionEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

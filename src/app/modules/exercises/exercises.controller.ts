@@ -1,5 +1,13 @@
 import { CreateExerciseDto } from '@app/entity-data-models';
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  UseInterceptors,
+} from '@nestjs/common';
+import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { ExercisesService } from './exercises.service';
 
 @Controller('exercises')
@@ -9,6 +17,8 @@ export class ExercisesController {
   // ==================== ENDPOINTS PÚBLICOS ====================
 
   @Get()
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(600) // 10 minutes
   findAll() {
     return this.exercisesService.findAll();
   }
@@ -19,16 +29,22 @@ export class ExercisesController {
   }
 
   @Get('equipment/all')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(600) // 10 minutes
   getEquipment() {
     return this.exercisesService.findAllEquipment();
   }
 
   @Get('muscles/all')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(600) // 10 minutes
   getMuscles() {
     return this.exercisesService.findAllMuscles();
   }
 
   @Get('exercise-types/all')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(600) // 10 minutes
   getExerciseTypes() {
     return this.exercisesService.findAllExerciseTypes();
   }

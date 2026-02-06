@@ -13,7 +13,9 @@ import {
   Post,
   Put,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -51,6 +53,8 @@ export class RoutineController {
   }
 
   @Get('stats/global')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(60) // 1 minute - stats change frequently
   async getGlobalStats(@CurrentUser() user: CurrentUserData) {
     const result = await this.routineService.getGlobalStats(user.id);
     return result;

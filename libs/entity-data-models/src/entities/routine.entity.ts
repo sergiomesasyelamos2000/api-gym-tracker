@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
@@ -14,6 +15,7 @@ import { RoutineSessionEntity } from './routine-session.entity';
 import { UserEntity } from './user.entity';
 
 @Entity()
+@Index(['userId', 'createdAt'])
 export class RoutineEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -25,6 +27,7 @@ export class RoutineEntity {
   totalTime!: number; // en segundos
 
   @Column()
+  @Index()
   userId!: string;
 
   @ManyToOne(() => UserEntity, { onDelete: 'CASCADE' })

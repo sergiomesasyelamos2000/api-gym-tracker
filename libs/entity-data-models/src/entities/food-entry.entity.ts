@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   ManyToOne,
   JoinColumn,
   PrimaryGeneratedColumn,
@@ -12,6 +13,8 @@ export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 export type FoodUnit = 'gram' | 'ml' | 'portion' | 'custom';
 
 @Entity('food_entries')
+@Index(['userId', 'date'])
+@Index(['userId', 'date', 'mealType'])
 export class FoodEntryEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

@@ -360,43 +360,31 @@ export class RoutineService {
   }
 
   async getAllSessions(userId: string) {
-    // Obtener IDs de rutinas del usuario
-    const userRoutines = await this.routineRepository.find({
-      where: { userId },
-      select: ['id'],
-    });
-    const routineIds = userRoutines.map(r => r.id);
-    if (routineIds.length === 0) {
-      return [];
-    }
-    return this.sessionRepository.find({
-      where: { routine: { id: In(routineIds) } },
-      relations: ['routine'],
-      order: { createdAt: 'DESC' },
-    });
+    // Optimized: Single query with JOIN instead of 2 separate queries
+    return this.sessionRepository
+      .createQueryBuilder('session')
+      .innerJoin('session.routine', 'routine')
+      .addSelect(['routine.id', 'routine.title'])
+      .where('routine.userId = :userId', { userId })
+      .orderBy('session.createdAt', 'DESC')
+      .getMany();
   }
 
   async getGlobalStats(userId: string) {
-    // Obtener IDs de rutinas del usuario
-    const userRoutines = await this.routineRepository.find({
-      where: { userId },
-      select: ['id'],
-    });
-    const routineIds = userRoutines.map(r => r.id);
-    if (routineIds.length === 0) {
-      return {
-        totalTime: 0,
-        totalWeight: 0,
-        completedSets: 0,
-      };
-    }
-    const sessions = await this.sessionRepository.find({
-      where: { routine: { id: In(routineIds) } },
-    });
+    // Optimized: Single query with SQL aggregation instead of 2 queries + in-memory aggregation
+    const stats = await this.sessionRepository
+      .createQueryBuilder('session')
+      .innerJoin('session.routine', 'routine')
+      .select('COALESCE(SUM(session.totalTime), 0)', 'totalTime')
+      .addSelect('COALESCE(SUM(session.totalWeight), 0)', 'totalWeight')
+      .addSelect('COALESCE(SUM(session.completedSets), 0)', 'completedSets')
+      .where('routine.userId = :userId', { userId })
+      .getRawOne();
+
     return {
-      totalTime: sessions.reduce((acc, s) => acc + s.totalTime, 0),
-      totalWeight: sessions.reduce((acc, s) => acc + s.totalWeight, 0),
-      completedSets: sessions.reduce((acc, s) => acc + s.completedSets, 0),
+      totalTime: parseInt(stats.totalTime) || 0,
+      totalWeight: parseInt(stats.totalWeight) || 0,
+      completedSets: parseInt(stats.completedSets) || 0,
     };
   }
 }

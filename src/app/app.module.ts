@@ -16,6 +16,7 @@ import {
   UserEntity,
   UserNutritionProfileEntity,
 } from '@app/entity-data-models';
+import { CacheModule } from '@nestjs/cache-manager';
 import { Module, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -42,6 +43,11 @@ import { ExportService } from './services/export.service';
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'public'),
       serveRoot: '/public',
+    }),
+    CacheModule.register({
+      isGlobal: true,
+      ttl: 300, // 5 minutes default TTL
+      max: 100, // Maximum number of items in cache
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -71,6 +77,20 @@ import { ExportService } from './services/export.service';
           UserEntity,
         ],
         synchronize: configService.get<string>('NODE_ENV') === 'development',
+        // Connection pool configuration
+        extra: {
+          max: 100, // Maximum number of connections in pool (increased from 50)
+          min: 20, // Minimum number of connections in pool (increased from 10)
+          idleTimeoutMillis: 30000, // Close idle connections after 30s
+          connectionTimeoutMillis: 10000, // Timeout for acquiring connection (increased from 5000)
+          acquireTimeoutMillis: 30000, // Timeout for acquiring connection from pool
+        },
+        // Query logging
+        logging:
+          configService.get<string>('NODE_ENV') === 'development'
+            ? ['query', 'error', 'warn']
+            : ['error'],
+        maxQueryExecutionTime: 1000, // Log queries taking > 1s
       }),
     }),
     ScheduleModule.forRoot(),
