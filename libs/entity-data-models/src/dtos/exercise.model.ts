@@ -16,6 +16,20 @@ export interface ExerciseRequestDto {
   supersetWith?: string;
 }
 
+// DTO for exercise details from local database
+export interface ExerciseDetailDto {
+  id: string;
+  name: string;
+  equipmentId?: string;
+  primaryMuscleId?: string;
+  typeId?: string;
+  image?: string;
+  instructions?: string[];
+  secondaryMuscleIds?: string[];
+  weightUnit: 'kg' | 'lbs';
+  repsType: 'reps' | 'range';
+}
+
 export class ExerciseResponseDto {
   id: string;
   name: string;
@@ -33,6 +47,19 @@ export class ExerciseResponseDto {
 }
 
 export class EquipmentDto {
+  id: string;
+  name: string;
+  image?: string;
+}
+
+export class MuscleDto {
+  id: string;
+  name: string;
+  image?: string;
+}
+
+export class ExerciseTypeDto {
+  id: string;
   name: string;
   image?: string;
 }

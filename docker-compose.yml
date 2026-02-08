@@ -10,6 +10,7 @@ services:
     volumes:
       - .:/usr/src/app
       - /usr/src/app/node_modules
+      - ./credentials:/usr/src/app/credentials
     env_file:
       - .env
     depends_on:
@@ -25,6 +26,7 @@ services:
     environment:
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
+      - GOOGLE_APPLICATION_CREDENTIALS=/usr/src/app/credentials/google-credentials.json
     command: sh -c "npm run migration:run || true && npm run start:dev"
 
   postgres:

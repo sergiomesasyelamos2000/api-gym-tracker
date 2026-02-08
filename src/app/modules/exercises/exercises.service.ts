@@ -127,11 +127,51 @@ export class ExercisesService implements OnModuleInit {
   }
 
   async onModuleInit() {
-    // Sincronizar datos al iniciar la aplicación (opcional)
-    /* await this.syncWithExerciseDB();
-    await this.syncBodyParts();
-    await this.syncEquipment();
-    await this.syncExerciseTypes(); */
+    // 🔄 Sincronización automática condicional
+    // Solo sincroniza si las tablas están vacías (primera vez o después de borrar volumen)
+    this.logger.log('🔍 Verificando estado de las tablas...');
+
+    const muscleCount = await this.muscleRepository.count();
+    const equipmentCount = await this.equipmentRepository.count();
+    const exerciseTypeCount = await this.exerciseTypeRepository.count();
+
+    this.logger.log(
+      `📊 Estado actual: Músculos=${muscleCount}, Equipamiento=${equipmentCount}, Tipos=${exerciseTypeCount}`,
+    );
+
+    // Sincronizar músculos si la tabla está vacía
+    if (muscleCount === 0) {
+      this.logger.log('⚠️ Tabla de músculos vacía, sincronizando...');
+      await this.syncBodyParts();
+    } else {
+      this.logger.log(`✅ Músculos ya cargados (${muscleCount} registros)`);
+    }
+
+    // Sincronizar equipamiento si la tabla está vacía
+    if (equipmentCount === 0) {
+      this.logger.log('⚠️ Tabla de equipamiento vacía, sincronizando...');
+      await this.syncEquipment();
+    } else {
+      this.logger.log(
+        `✅ Equipamiento ya cargado (${equipmentCount} registros)`,
+      );
+    }
+
+    // Sincronizar tipos de ejercicio si la tabla está vacía
+    if (exerciseTypeCount === 0) {
+      this.logger.log('⚠️ Tabla de tipos de ejercicio vacía, sincronizando...');
+      await this.syncExerciseTypes();
+    } else {
+      this.logger.log(
+        `✅ Tipos de ejercicio ya cargados (${exerciseTypeCount} registros)`,
+      );
+    }
+
+    // Nota: syncWithExerciseDB() se mantiene comentado porque sincroniza 1500+ ejercicios
+    // y toma mucho tiempo. Se puede ejecutar manualmente si es necesario.
+    // await this.syncWithExerciseDB();
+
+    this.logger.log('✅ Verificación de datos completada');
   }
 
   // ==================== MÉTODOS PRINCIPALES ====================
@@ -223,146 +263,22 @@ export class ExercisesService implements OnModuleInit {
         '🚀 Iniciando sincronización con ExerciseDB (API oficial gratuita)...',
       );
 
-      const baseUrl = 'https://www.exercisedb.dev/api/v1/exercises';
-
-      this.logger.log('📡 Obteniendo ejercicios desde ExerciseDB...');
-
-      // 🔄 Implementar paginación para obtener TODOS los ejercicios
-      let allExercises: ExerciseDbItem[] = [];
-      let offset = 0;
-      const limit = 100; // Cantidad por página
-      let hasMore = true;
-
-      while (hasMore) {
-        this.logger.log(
-          `📄 Página ${Math.floor(offset / limit) + 1}: Obteniendo ejercicios ${offset} - ${offset + limit}...`,
-        );
-
-        const response = await firstValueFrom(
-          this.httpService.get(baseUrl, {
-            params: {
-              limit: limit,
-              offset: offset,
-            },
-            timeout: 120000, // 120 segundos
-          }),
-        );
-
-        if (response.status !== 200) {
-          throw new Error(`Error HTTP ${response.status}`);
-        }
-
-        // La API puede devolver diferentes estructuras de respuesta
-        const responseData = response.data;
-
-        // Log para debug: ver la estructura de la respuesta
-        if (offset === 0) {
-          this.logger.log(
-            `📊 Estructura de respuesta: ${JSON.stringify(Object.keys(responseData)).substring(0, 200)}`,
-          );
-        }
-
-        // Intentar extraer el array de ejercicios de diferentes formas
-        let batchData: ExerciseDbItem[];
-
-        if (Array.isArray(responseData)) {
-          // Si response.data ya es un array
-          batchData = responseData;
-        } else if (responseData.data && Array.isArray(responseData.data)) {
-          // Si tiene una propiedad 'data' que es un array
-          batchData = responseData.data;
-        } else if (
-          responseData.exercises &&
-          Array.isArray(responseData.exercises)
-        ) {
-          // Si tiene una propiedad 'exercises' que es un array
-          batchData = responseData.exercises;
-        } else {
-          this.logger.error(
-            'No se encontró array de ejercicios en la respuesta. Claves disponibles:',
-            Object.keys(responseData),
-          );
-          this.logger.error(
-            'Muestra de la respuesta:',
-            JSON.stringify(responseData).substring(0, 500),
-          );
-          throw new Error(
-            'La respuesta de ExerciseDB no contiene un array de ejercicios en el formato esperado',
-          );
-        }
-
-        // Si no hay datos, terminamos
-        if (batchData.length === 0) {
-          this.logger.log('✅ No hay más ejercicios disponibles');
-          hasMore = false;
-          break;
-        }
-
-        allExercises.push(...batchData);
-
-        this.logger.log(
-          `✅ Obtenidos ${batchData.length} ejercicios. Total acumulado: ${allExercises.length}`,
-        );
-
-        // Si obtuvimos menos ejercicios que el límite, ya no hay más
-        if (batchData.length < limit) {
-          this.logger.log('✅ Última página alcanzada');
-          hasMore = false;
-        } else {
-          offset += limit;
-          // Pequeña pausa para no saturar la API (ser amables)
-          await new Promise(resolve => setTimeout(resolve, 300));
-        }
-      }
-
-      this.logger.log(
-        `📊 Total de ejercicios obtenidos: ${allExercises.length}`,
-      );
+      const allExercises = await this.fetchAllExercises();
 
       if (allExercises.length === 0) {
-        this.logger.warn('⚠️  No se obtuvieron ejercicios de ExerciseDB');
+        this.logger.warn('⚠️ No se obtuvieron ejercicios de ExerciseDB');
         return {
           message: 'No se obtuvieron ejercicios de ExerciseDB',
           count: 0,
         };
       }
 
-      this.logger.log(
-        `🌍 Procesando y traduciendo ${allExercises.length} ejercicios...`,
-      );
-
-      const batchSize = 50;
-      const entities: ExerciseEntity[] = [];
-
-      for (let i = 0; i < allExercises.length; i += batchSize) {
-        const batch = allExercises.slice(i, i + batchSize);
-
-        const batchEntities = await Promise.all(
-          batch.map(async (item: ExerciseDbItem) => {
-            return await this.mapToExerciseEntity(item);
-          }),
-        );
-
-        entities.push(...batchEntities);
-
-        const progress = Math.min(i + batchSize, allExercises.length);
-        this.logger.log(
-          `🔄 Procesado lote ${Math.floor(i / batchSize) + 1}: ${progress}/${allExercises.length} ejercicios`,
-        );
-      }
-
-      // Limpiar la base de datos antes de insertar los nuevos ejercicios
-      this.logger.log('🗑️  Limpiando ejercicios anteriores...');
-      await this.exerciseRepository.createQueryBuilder().delete().execute();
-
-      // Guardar los nuevos ejercicios en lotes
-      this.logger.log('💾 Guardando ejercicios en la base de datos...');
-      await this.exerciseRepository.save(entities, { chunk: 100 });
+      const entities = await this.processExerciseBatch(allExercises);
+      await this.saveExercises(entities);
 
       this.logger.log(
-        `✅ ¡Sincronización completada! ${entities.length} ejercicios guardados en la base de datos`,
+        `✅ ¡Sincronización completada! ${entities.length} ejercicios guardados`,
       );
-
       return {
         message: `Sincronización completada exitosamente. ${entities.length} ejercicios guardados.`,
         count: entities.length,
@@ -372,12 +288,183 @@ export class ExercisesService implements OnModuleInit {
         `❌ Error en sincronización: ${error.message}`,
         error.stack,
       );
-
-      return {
-        message: `Error en sincronización: ${error.message}`,
-        count: 0,
-      };
+      return { message: `Error en sincronización: ${error.message}`, count: 0 };
     }
+  }
+
+  // 🔄 Método para obtener todos los ejercicios con paginación
+  private async fetchAllExercises(): Promise<ExerciseDbItem[]> {
+    const baseUrl = 'https://www.exercisedb.dev/api/v1/exercises';
+    const limit = 25;
+    let offset = 0;
+    let allExercises: ExerciseDbItem[] = [];
+    let hasMore = true;
+
+    this.logger.log('📡 Obteniendo ejercicios desde ExerciseDB...');
+
+    while (hasMore) {
+      const pageNumber = Math.floor(offset / limit) + 1;
+      this.logger.log(
+        `📄 Página ${pageNumber}: Obteniendo ejercicios ${offset} - ${offset + limit}...`,
+      );
+
+      const batchData = await this.fetchExercisePage(baseUrl, limit, offset);
+
+      if (batchData.length === 0) {
+        this.logger.log('✅ No hay más ejercicios disponibles');
+        break;
+      }
+
+      allExercises.push(...batchData);
+      this.logger.log(
+        `✅ Obtenidos ${batchData.length} ejercicios. Total acumulado: ${allExercises.length}`,
+      );
+
+      if (batchData.length < limit) {
+        this.logger.log('✅ Última página alcanzada');
+        hasMore = false;
+      } else {
+        offset += limit;
+        await this.rateLimitDelay();
+      }
+    }
+
+    this.logger.log(`📊 Total de ejercicios obtenidos: ${allExercises.length}`);
+    return allExercises;
+  }
+
+  // 📄 Método para obtener una página de ejercicios con retry
+  private async fetchExercisePage(
+    baseUrl: string,
+    limit: number,
+    offset: number,
+  ): Promise<ExerciseDbItem[]> {
+    const maxRetries = 5;
+    let retryCount = 0;
+    let response;
+
+    while (retryCount <= maxRetries) {
+      try {
+        response = await firstValueFrom(
+          this.httpService.get(baseUrl, {
+            params: { limit, offset },
+            timeout: 120000,
+          }),
+        );
+
+        if (response.status !== 200) {
+          throw new Error(`Error HTTP ${response.status}`);
+        }
+
+        return this.extractExercisesFromResponse(response.data, offset);
+      } catch (error) {
+        if (error.response?.status === 429 && retryCount < maxRetries) {
+          await this.handleRateLimit(++retryCount, maxRetries);
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    throw new Error('Max retries alcanzado sin éxito');
+  }
+
+  // 📊 Método para extraer ejercicios de diferentes estructuras de respuesta
+  private extractExercisesFromResponse(
+    responseData: any,
+    offset: number,
+  ): ExerciseDbItem[] {
+    // Log solo en la primera petición
+    if (offset === 0) {
+      this.logger.log(
+        `📊 Estructura de respuesta: ${JSON.stringify(Object.keys(responseData)).substring(0, 200)}`,
+      );
+    }
+
+    // Intentar diferentes estructuras
+    if (Array.isArray(responseData)) {
+      return responseData;
+    }
+
+    if (responseData.data && Array.isArray(responseData.data)) {
+      return responseData.data;
+    }
+
+    if (responseData.exercises && Array.isArray(responseData.exercises)) {
+      return responseData.exercises;
+    }
+
+    this.logger.error(
+      'No se encontró array de ejercicios. Claves:',
+      Object.keys(responseData),
+    );
+    this.logger.error(
+      'Muestra:',
+      JSON.stringify(responseData).substring(0, 500),
+    );
+    throw new Error(
+      'La respuesta de ExerciseDB no contiene un array en el formato esperado',
+    );
+  }
+
+  // ⏱️ Método para manejar rate limiting con exponential backoff
+  private async handleRateLimit(
+    retryCount: number,
+    maxRetries: number,
+  ): Promise<void> {
+    const baseDelay = Math.pow(2, retryCount) * 1000;
+    const jitter = Math.random() * 1000;
+    const delay = baseDelay + jitter;
+
+    this.logger.warn(
+      `⚠️ Rate limit (429) alcanzado. Reintento ${retryCount}/${maxRetries} en ${Math.round(delay / 1000)}s...`,
+    );
+
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+
+  // ⏳ Método para delay entre peticiones
+  private async rateLimitDelay(): Promise<void> {
+    this.logger.log('⏳ Esperando 3 segundos para respetar rate limits...');
+    await new Promise(resolve => setTimeout(resolve, 3000));
+  }
+
+  // 🌍 Método para procesar lotes de ejercicios
+  private async processExerciseBatch(
+    exercises: ExerciseDbItem[],
+  ): Promise<ExerciseEntity[]> {
+    this.logger.log(
+      `🌍 Procesando y traduciendo ${exercises.length} ejercicios...`,
+    );
+
+    const batchSize = 50;
+    const entities: ExerciseEntity[] = [];
+
+    for (let i = 0; i < exercises.length; i += batchSize) {
+      const batch = exercises.slice(i, i + batchSize);
+
+      const batchEntities = await Promise.all(
+        batch.map(item => this.mapToExerciseEntity(item)),
+      );
+
+      entities.push(...batchEntities);
+
+      const progress = Math.min(i + batchSize, exercises.length);
+      this.logger.log(
+        `🔄 Procesado lote ${Math.floor(i / batchSize) + 1}: ${progress}/${exercises.length} ejercicios`,
+      );
+    }
+
+    return entities;
+  }
+
+  // 💾 Método para guardar ejercicios en la base de datos
+  private async saveExercises(entities: ExerciseEntity[]): Promise<void> {
+    this.logger.log('🗑️ Limpiando ejercicios anteriores...');
+    await this.exerciseRepository.createQueryBuilder().delete().execute();
+
+    this.logger.log('💾 Guardando ejercicios en la base de datos...');
+    await this.exerciseRepository.save(entities, { chunk: 100 });
   }
 
   private async mapToExerciseEntity(
@@ -550,134 +637,351 @@ export class ExercisesService implements OnModuleInit {
 
   async syncBodyParts(): Promise<{ message: string; count: number }> {
     try {
-      this.logger.log(
-        '🚀 Sincronizando partes del cuerpo desde ExerciseDB v2...',
-      );
+      this.logger.log('🔄 Sincronizando músculos (body parts)...');
 
-      const response = await firstValueFrom(
-        this.httpService.get('https://v2.exercisedb.dev/api/v1/bodyparts', {
-          timeout: 30000,
-        }),
-      );
+      // ✅ Datos estáticos con traducciones incluidas
+      const bodyParts = [
+        {
+          nameEn: 'BACK',
+          nameEs: 'Espalda',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/back.webp',
+        },
+        {
+          nameEn: 'CALVES',
+          nameEs: 'Pantorrillas',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/calves.webp',
+        },
+        {
+          nameEn: 'CHEST',
+          nameEs: 'Pecho',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/chest.webp',
+        },
+        {
+          nameEn: 'FOREARMS',
+          nameEs: 'Antebrazos',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/forearms.webp',
+        },
+        {
+          nameEn: 'HIPS',
+          nameEs: 'Caderas',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/hips.webp',
+        },
+        {
+          nameEn: 'NECK',
+          nameEs: 'Cuello',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/neck.webp',
+        },
+        {
+          nameEn: 'SHOULDERS',
+          nameEs: 'Hombros',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/shoulders.webp',
+        },
+        {
+          nameEn: 'THIGHS',
+          nameEs: 'Muslos',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/thighs.webp',
+        },
+        {
+          nameEn: 'WAIST',
+          nameEs: 'Cintura',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/waist.webp',
+        },
+        {
+          nameEn: 'HANDS',
+          nameEs: 'Manos',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/hands.webp',
+        },
+        {
+          nameEn: 'FEET',
+          nameEs: 'Pies',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/feet.webp',
+        },
+        {
+          nameEn: 'FACE',
+          nameEs: 'Cara',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/face.webp',
+        },
+        {
+          nameEn: 'FULL BODY',
+          nameEs: 'Cuerpo completo',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/fullbody.webp',
+        },
+        {
+          nameEn: 'BICEPS',
+          nameEs: 'Bíceps',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/biceps.webp',
+        },
+        {
+          nameEn: 'UPPER ARMS',
+          nameEs: 'Brazos superiores',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/biceps.webp',
+        },
+        {
+          nameEn: 'TRICEPS',
+          nameEs: 'Tríceps',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/triceps.webp',
+        },
+        {
+          nameEn: 'HAMSTRINGS',
+          nameEs: 'Isquiotibiales',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/hamstrings.webp',
+        },
+        {
+          nameEn: 'QUADRICEPS',
+          nameEs: 'Cuádriceps',
+          imageUrl: 'https://cdn.exercisedb.dev/bodyparts/quadriceps.webp',
+        },
+      ];
 
-      if (!response.data.success || !response.data.data) {
-        throw new Error('Respuesta inválida de la API');
-      }
-
-      const bodyParts = response.data.data;
-      this.logger.log(`📊 Obtenidas ${bodyParts.length} partes del cuerpo`);
+      this.logger.log(`📊 Procesando ${bodyParts.length} músculos`);
 
       await this.muscleRepository.clear();
 
-      const batchSize = 5;
       const entities: MuscleEntity[] = [];
 
-      for (let i = 0; i < bodyParts.length; i += batchSize) {
-        const batch = bodyParts.slice(i, i + batchSize);
+      for (const item of bodyParts) {
+        const { v4: uuidv4 } = await import('uuid');
 
-        const batchEntities = await Promise.all(
-          batch.map(async (item: BodyPartItem) => {
-            const { v4: uuidv4 } = await import('uuid');
+        this.logger.log(`✓ ${item.nameEn} → ${item.nameEs}`);
 
-            // 🔥 Usar el mismo método de traducción que syncWithExerciseDB
-            const translatedName = await this.translateToSpanish(item.name);
-            this.logger.log(`✓ ${item.name} → ${translatedName}`);
+        let imageBase64: string | undefined;
+        if (item.imageUrl) {
+          try {
+            imageBase64 = await this.downloadAndConvertToBase64(item.imageUrl);
+          } catch (error) {
+            this.logger.warn(`⚠️ Error con imagen de ${item.nameEn}`);
+          }
+        }
 
-            let imageBase64: string | undefined;
-            if (item.imageUrl) {
-              try {
-                imageBase64 = await this.downloadAndConvertToBase64(
-                  item.imageUrl,
-                );
-              } catch (error) {
-                this.logger.warn(`⚠️ Error con imagen de ${item.name}`);
-              }
-            }
-
-            return this.muscleRepository.create({
-              id: uuidv4(),
-              name: translatedName, // ✅ Ahora usa traducción consistente
-              image: imageBase64,
-            });
+        entities.push(
+          this.muscleRepository.create({
+            id: uuidv4(),
+            name: item.nameEs, // ✅ Uso directo sin traducción
+            image: imageBase64,
           }),
-        );
-
-        entities.push(...batchEntities);
-        this.logger.log(
-          `🔄 Procesado lote ${Math.floor(i / batchSize) + 1}/${Math.ceil(bodyParts.length / batchSize)}`,
         );
       }
 
       await this.muscleRepository.save(entities);
-      this.logger.log(`✅ ${entities.length} partes del cuerpo sincronizadas`);
+      this.logger.log(`✅ ${entities.length} músculos sincronizados`);
 
       return {
-        message: `${entities.length} partes del cuerpo sincronizadas exitosamente`,
+        message: `${entities.length} músculos sincronizados exitosamente`,
         count: entities.length,
       };
     } catch (error) {
       this.logger.error(
-        `❌ Error sincronizando partes del cuerpo: ${error.message}`,
+        `❌ Error sincronizando músculos: ${error.message}`,
+        error.stack,
       );
-      throw error;
+      return {
+        message: `Error sincronizando músculos: ${error.message}`,
+        count: 0,
+      };
     }
   }
 
   async syncEquipment(): Promise<{ message: string; count: number }> {
     try {
-      this.logger.log('🚀 Sincronizando equipamiento desde ExerciseDB v2...');
+      this.logger.log('🔄 Sincronizando equipamiento...');
 
-      const response = await firstValueFrom(
-        this.httpService.get('https://v2.exercisedb.dev/api/v1/equipments', {
-          timeout: 30000,
-        }),
-      );
+      // ✅ Datos estáticos con traducciones incluidas
+      const equipments = [
+        {
+          nameEn: 'ASSISTED',
+          nameEs: 'Asistido',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-assisted.webp',
+        },
+        {
+          nameEn: 'BAND',
+          nameEs: 'Banda elástica',
+          imageUrl: 'https://cdn.exercisedb.dev/equipments/equipment-band.webp',
+        },
+        {
+          nameEn: 'BARBELL',
+          nameEs: 'Barra',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-barbell.webp',
+        },
+        {
+          nameEn: 'BATTLING ROPE',
+          nameEs: 'Cuerda de batalla',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Battling-Rope.webp',
+        },
+        {
+          nameEn: 'BODY WEIGHT',
+          nameEs: 'Peso corporal',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Body-weight.webp',
+        },
+        {
+          nameEn: 'BOSU BALL',
+          nameEs: 'Balón Bosu',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Bosu-ball.webp',
+        },
+        {
+          nameEn: 'CABLE',
+          nameEs: 'Cable',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Cable-1.webp',
+        },
+        {
+          nameEn: 'DUMBBELL',
+          nameEs: 'Mancuerna',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Dumbbell.webp',
+        },
+        {
+          nameEn: 'EZ BARBELL',
+          nameEs: 'Barra Z',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-EZ-Barbell.webp',
+        },
+        {
+          nameEn: 'HAMMER',
+          nameEs: 'Martillo',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-hammer.webp',
+        },
+        {
+          nameEn: 'KETTLEBELL',
+          nameEs: 'Pesa rusa',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Kettlebell.webp',
+        },
+        {
+          nameEn: 'LEVERAGE MACHINE',
+          nameEs: 'Máquina de palanca',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Leverage-machine.webp',
+        },
+        {
+          nameEn: 'MEDICINE BALL',
+          nameEs: 'Balón medicinal',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Medicine-Ball.webp',
+        },
+        {
+          nameEn: 'OLYMPIC BARBELL',
+          nameEs: 'Barra olímpica',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Olympic-barbell.webp',
+        },
+        {
+          nameEn: 'POWER SLED',
+          nameEs: 'Trineo de potencia',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Power-Sled.webp',
+        },
+        {
+          nameEn: 'RESISTANCE BAND',
+          nameEs: 'Banda de resistencia',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Resistance-Band.webp',
+        },
+        {
+          nameEn: 'ROLL',
+          nameEs: 'Rodillo',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Massage-Roller.webp',
+        },
+        {
+          nameEn: 'ROLLBALL',
+          nameEs: 'Bola de masaje',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Roll-Ball.webp',
+        },
+        {
+          nameEn: 'ROPE',
+          nameEs: 'Cuerda',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Jump-Rope.webp',
+        },
+        {
+          nameEn: 'SLED MACHINE',
+          nameEs: 'Máquina trineo',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Sled-machine.webp',
+        },
+        {
+          nameEn: 'SMITH MACHINE',
+          nameEs: 'Máquina Smith',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Smith-machine.webp',
+        },
+        {
+          nameEn: 'STABILITY BALL',
+          nameEs: 'Balón de estabilidad',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Stability-ball.webp',
+        },
+        {
+          nameEn: 'STICK',
+          nameEs: 'Palo',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Stick.webp',
+        },
+        {
+          nameEn: 'SUSPENSION',
+          nameEs: 'Suspensión',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Suspension.webp',
+        },
+        {
+          nameEn: 'TRAP BAR',
+          nameEs: 'Barra hexagonal',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Trap-bar.webp',
+        },
+        {
+          nameEn: 'VIBRATE PLATE',
+          nameEs: 'Plataforma vibratoria',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Vibrate-Plate.webp',
+        },
+        {
+          nameEn: 'WEIGHTED',
+          nameEs: 'Con peso',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Weighted.webp',
+        },
+        {
+          nameEn: 'WHEEL ROLLER',
+          nameEs: 'Rueda abdominal',
+          imageUrl:
+            'https://cdn.exercisedb.dev/equipments/equipment-Wheel-Roller.webp',
+        },
+      ];
 
-      if (!response.data.success || !response.data.data) {
-        throw new Error('Respuesta inválida de la API');
-      }
-
-      const equipments = response.data.data;
-      this.logger.log(`📊 Obtenidos ${equipments.length} equipamientos`);
+      this.logger.log(`📊 Procesando ${equipments.length} equipamientos`);
 
       await this.equipmentRepository.clear();
 
-      const batchSize = 5;
       const entities: EquipmentEntity[] = [];
 
-      for (let i = 0; i < equipments.length; i += batchSize) {
-        const batch = equipments.slice(i, i + batchSize);
+      for (const item of equipments) {
+        const { v4: uuidv4 } = await import('uuid');
 
-        const batchEntities = await Promise.all(
-          batch.map(async (item: EquipmentItem) => {
-            const { v4: uuidv4 } = await import('uuid');
+        this.logger.log(`✓ ${item.nameEn} → ${item.nameEs}`);
 
-            // 🔥 Usar el mismo método de traducción que syncWithExerciseDB
-            const translatedName = await this.translateToSpanish(item.name);
-            this.logger.log(`✓ ${item.name} → ${translatedName}`);
+        let imageBase64: string | undefined;
+        if (item.imageUrl) {
+          try {
+            imageBase64 = await this.downloadAndConvertToBase64(item.imageUrl);
+          } catch (error) {
+            this.logger.warn(`⚠️ Error con imagen de ${item.nameEn}`);
+          }
+        }
 
-            let imageBase64: string | undefined;
-            if (item.imageUrl) {
-              try {
-                imageBase64 = await this.downloadAndConvertToBase64(
-                  item.imageUrl,
-                );
-              } catch (error) {
-                this.logger.warn(`⚠️ Error con imagen de ${item.name}`);
-              }
-            }
-
-            return this.equipmentRepository.create({
-              id: uuidv4(),
-              name: translatedName, // ✅ Ahora usa traducción consistente
-              image: imageBase64,
-            });
+        entities.push(
+          this.equipmentRepository.create({
+            id: uuidv4(),
+            name: item.nameEs, // ✅ Uso directo sin traducción
+            image: imageBase64,
           }),
-        );
-
-        entities.push(...batchEntities);
-        this.logger.log(
-          `🔄 Procesado lote ${Math.floor(i / batchSize) + 1}/${Math.ceil(equipments.length / batchSize)}`,
         );
       }
 
@@ -698,63 +1002,76 @@ export class ExercisesService implements OnModuleInit {
 
   async syncExerciseTypes(): Promise<{ message: string; count: number }> {
     try {
+      this.logger.log('🔄 Sincronizando tipos de ejercicio...');
+
+      // ✅ Datos estáticos con traducciones incluidas
+      const exerciseTypes = [
+        {
+          nameEn: 'STRENGTH',
+          nameEs: 'Fuerza',
+          imageUrl: 'https://cdn.exercisedb.dev/exercisetypes/strength.webp',
+        },
+        {
+          nameEn: 'CARDIO',
+          nameEs: 'Cardio',
+          imageUrl: 'https://cdn.exercisedb.dev/exercisetypes/cardio.webp',
+        },
+        {
+          nameEn: 'PLYOMETRICS',
+          nameEs: 'Pliometría',
+          imageUrl: 'https://cdn.exercisedb.dev/exercisetypes/plyometrics.webp',
+        },
+        {
+          nameEn: 'STRETCHING',
+          nameEs: 'Estiramiento',
+          imageUrl: 'https://cdn.exercisedb.dev/exercisetypes/stretching.webp',
+        },
+        {
+          nameEn: 'WEIGHTLIFTING',
+          nameEs: 'Levantamiento de pesas',
+          imageUrl:
+            'https://cdn.exercisedb.dev/exercisetypes/weightlifting.webp',
+        },
+        {
+          nameEn: 'YOGA',
+          nameEs: 'Yoga',
+          imageUrl: 'https://cdn.exercisedb.dev/exercisetypes/yoga.webp',
+        },
+        {
+          nameEn: 'AEROBIC',
+          nameEs: 'Aeróbico',
+          imageUrl: 'https://cdn.exercisedb.dev/exercisetypes/aerobic.webp',
+        },
+      ];
+
       this.logger.log(
-        '🚀 Sincronizando tipos de ejercicio desde ExerciseDB v2...',
-      );
-
-      const response = await firstValueFrom(
-        this.httpService.get('https://v2.exercisedb.dev/api/v1/exercisetypes', {
-          timeout: 30000,
-        }),
-      );
-
-      if (!response.data.success || !response.data.data) {
-        throw new Error('Respuesta inválida de la API');
-      }
-
-      const exerciseTypes = response.data.data;
-      this.logger.log(
-        `📊 Obtenidos ${exerciseTypes.length} tipos de ejercicio`,
+        `📊 Procesando ${exerciseTypes.length} tipos de ejercicio`,
       );
 
       await this.exerciseTypeRepository.clear();
 
-      const batchSize = 5;
       const entities: ExerciseTypeEntity[] = [];
 
-      for (let i = 0; i < exerciseTypes.length; i += batchSize) {
-        const batch = exerciseTypes.slice(i, i + batchSize);
+      for (const item of exerciseTypes) {
+        const { v4: uuidv4 } = await import('uuid');
 
-        const batchEntities = await Promise.all(
-          batch.map(async (item: ExerciseTypeItem) => {
-            const { v4: uuidv4 } = await import('uuid');
+        this.logger.log(`✓ ${item.nameEn} → ${item.nameEs}`);
 
-            // 🔥 Usar el mismo método de traducción que syncWithExerciseDB
-            const translatedName = await this.translateToSpanish(item.name);
-            this.logger.log(`✓ ${item.name} → ${translatedName}`);
+        let imageBase64: string | undefined;
+        if (item.imageUrl) {
+          try {
+            imageBase64 = await this.downloadAndConvertToBase64(item.imageUrl);
+          } catch (error) {
+            this.logger.warn(`⚠️ Error con imagen de ${item.nameEn}`);
+          }
+        }
 
-            let imageBase64: string | undefined;
-            if (item.imageUrl) {
-              try {
-                imageBase64 = await this.downloadAndConvertToBase64(
-                  item.imageUrl,
-                );
-              } catch (error) {
-                this.logger.warn(`⚠️ Error con imagen de ${item.name}`);
-              }
-            }
-
-            return this.exerciseTypeRepository.create({
-              id: uuidv4(),
-              name: translatedName, // ✅ Ahora usa traducción consistente
-              image: imageBase64,
-            });
+        entities.push(
+          this.exerciseTypeRepository.create({
+            id: uuidv4(),
+            name: item.nameEs, // ✅ Uso directo sin traducción
+            image: imageBase64,
           }),
-        );
-
-        entities.push(...batchEntities);
-        this.logger.log(
-          `🔄 Procesado lote ${Math.floor(i / batchSize) + 1}/${Math.ceil(exerciseTypes.length / batchSize)}`,
         );
       }
 
