@@ -15,7 +15,7 @@ export class ExerciseEntity {
   @Column()
   name: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   imageUrl?: string;
 
   @Column({ nullable: true })
