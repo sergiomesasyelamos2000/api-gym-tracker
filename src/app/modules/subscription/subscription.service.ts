@@ -157,20 +157,23 @@ export class SubscriptionService {
       subscription.price = (session.amount_total || 0) / 100; // Convert from cents
     } else {
       // Recurring subscription
-      let stripeSubscription: Stripe.Subscription;
+      let stripeSubscription: any;
 
       if (typeof session.subscription === 'string') {
         // Si es un ID, obtener el objeto completo de Stripe
         this.logger.log(`Fetching subscription details for: ${session.subscription}`);
         stripeSubscription = await this.stripeService.getSubscription(session.subscription);
       } else if (session.subscription && typeof session.subscription === 'object') {
-        stripeSubscription = session.subscription as Stripe.Subscription;
+        stripeSubscription = session.subscription;
       } else {
         throw new BadRequestException('Subscription information missing from session');
       }
 
       // Validar que tenemos los datos necesarios
-      if (!stripeSubscription.current_period_start || !stripeSubscription.current_period_end) {
+      const periodStart = stripeSubscription.current_period_start;
+      const periodEnd = stripeSubscription.current_period_end;
+
+      if (!periodStart || !periodEnd) {
         this.logger.error(`Missing period dates in subscription: ${JSON.stringify(stripeSubscription)}`);
         throw new BadRequestException('Invalid subscription data from Stripe');
       }
@@ -180,9 +183,6 @@ export class SubscriptionService {
       subscription.stripeSubscriptionId = stripeSubscription.id;
 
       // Convertir timestamps de Unix a Date objects
-      const periodStart = stripeSubscription.current_period_start;
-      const periodEnd = stripeSubscription.current_period_end;
-
       subscription.currentPeriodStart = new Date(periodStart * 1000);
       subscription.currentPeriodEnd = new Date(periodEnd * 1000);
 
@@ -192,7 +192,7 @@ export class SubscriptionService {
         throw new BadRequestException('Invalid subscription period dates');
       }
 
-      subscription.price = (stripeSubscription.items.data[0]?.price?.unit_amount ?? 0) / 100;
+      subscription.price = (stripeSubscription.items?.data?.[0]?.price?.unit_amount ?? 0) / 100;
     }
 
     subscription.currency = session.currency || 'usd';
@@ -352,23 +352,23 @@ export class SubscriptionService {
 
     switch (event.type) {
       case 'checkout.session.completed':
-        await this.handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session);
+        await this.handleCheckoutSessionCompleted(event.data.object);
         break;
 
       case 'customer.subscription.updated':
-        await this.handleSubscriptionUpdated(event.data.object as Stripe.Subscription);
+        await this.handleSubscriptionUpdated(event.data.object);
         break;
 
       case 'customer.subscription.deleted':
-        await this.handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
+        await this.handleSubscriptionDeleted(event.data.object);
         break;
 
       case 'invoice.payment_succeeded':
-        await this.handleInvoicePaymentSucceeded(event.data.object as Stripe.Invoice);
+        await this.handleInvoicePaymentSucceeded(event.data.object);
         break;
 
       case 'invoice.payment_failed':
-        await this.handleInvoicePaymentFailed(event.data.object as Stripe.Invoice);
+        await this.handleInvoicePaymentFailed(event.data.object);
         break;
 
       default:
@@ -422,7 +422,7 @@ export class SubscriptionService {
   // ==================== PRIVATE METHODS ====================
 
   private async handleCheckoutSessionCompleted(
-    session: Stripe.Checkout.Session,
+    session: any,
   ): Promise<void> {
     const userId = session.metadata?.userId;
     if (!userId) {
@@ -435,7 +435,7 @@ export class SubscriptionService {
   }
 
   private async handleSubscriptionUpdated(
-    stripeSubscription: Stripe.Subscription,
+    stripeSubscription: any,
   ): Promise<void> {
     const subscription = await this.subscriptionRepository.findOne({
       where: { stripeSubscriptionId: stripeSubscription.id },
@@ -447,11 +447,8 @@ export class SubscriptionService {
     }
 
     subscription.status = this.mapStripeStatus(stripeSubscription.status);
-    // @ts-ignore - Stripe API version typing issue
     subscription.currentPeriodStart = new Date(stripeSubscription.current_period_start * 1000);
-    // @ts-ignore - Stripe API version typing issue
     subscription.currentPeriodEnd = new Date(stripeSubscription.current_period_end * 1000);
-    // @ts-ignore - Stripe API version typing issue
     subscription.cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end;
 
     await this.subscriptionRepository.save(subscription);
@@ -459,7 +456,7 @@ export class SubscriptionService {
   }
 
   private async handleSubscriptionDeleted(
-    stripeSubscription: Stripe.Subscription,
+    stripeSubscription: any,
   ): Promise<void> {
     const subscription = await this.subscriptionRepository.findOne({
       where: { stripeSubscriptionId: stripeSubscription.id },
@@ -479,17 +476,16 @@ export class SubscriptionService {
   }
 
   private async handleInvoicePaymentSucceeded(
-    invoice: Stripe.Invoice,
+    invoice: any,
   ): Promise<void> {
     this.logger.log(`Invoice payment succeeded: ${invoice.id}`);
     // Subscription will be updated via subscription.updated event
   }
 
   private async handleInvoicePaymentFailed(
-    invoice: Stripe.Invoice,
+    invoice: any,
   ): Promise<void> {
     this.logger.log(`Invoice payment failed: ${invoice.id}`);
-    // @ts-ignore - Stripe typing issue with subscription field
     const subscriptionId = typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id;
 
     if (subscriptionId) {
@@ -518,7 +514,7 @@ export class SubscriptionService {
   }
 
   private mapStripeStatus(
-    stripeStatus: Stripe.Subscription.Status,
+    stripeStatus: string,
   ): SubscriptionStatus {
     switch (stripeStatus) {
       case 'active':
