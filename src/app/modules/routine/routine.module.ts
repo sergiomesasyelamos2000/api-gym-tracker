@@ -10,6 +10,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { RoutineController } from './routine.controller';
 import { RoutineService } from './routine.service';
 import { AuthModule } from '../auth/auth.module';
+import { SubscriptionModule } from '../subscription/subscription.module';
 
 @Module({
   controllers: [RoutineController],
@@ -23,6 +24,7 @@ import { AuthModule } from '../auth/auth.module';
       RoutineSessionEntity,
     ]),
     AuthModule,
+    SubscriptionModule,
   ],
   exports: [TypeOrmModule, RoutineService],
 })

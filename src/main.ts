@@ -2,7 +2,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app/app.module';
 import 'reflect-metadata';
-import { json, urlencoded } from 'express';
+import { json, urlencoded, raw } from 'express';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -10,7 +10,10 @@ dotenv.config();
 declare const module: any;
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
+
+  // ✅ Raw body for Stripe webhook (must be BEFORE json middleware)
+  app.use('/api/subscription/webhook', raw({ type: 'application/json' }));
 
   // ✅ Aumentar el límite de tamaño del payload
   app.use(json({ limit: '10mb' })); // Aumenta a 10MB

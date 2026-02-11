@@ -23,6 +23,8 @@ import {
   CurrentUserData,
 } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { SubscriptionGuard } from '../subscription/guards/subscription.guard';
+import { RequireSubscription } from '../subscription/decorators/require-subscription.decorator';
 import { RoutineService } from './routine.service';
 
 @Controller('routines')
@@ -61,6 +63,8 @@ export class RoutineController {
   }
 
   @Post()
+  @UseGuards(SubscriptionGuard)
+  @RequireSubscription('create_routine')
   async create(
     @Body() routineRequestDto: RoutineRequestDto,
     @CurrentUser() user: CurrentUserData,

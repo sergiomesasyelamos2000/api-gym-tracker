@@ -21,6 +21,7 @@ import { AIService } from '../../services/ai.service';
 import { GeminiProvider } from '../../services/gemini.provider';
 import { GroqProvider } from '../../services/groq.provider';
 import { RoutineModule } from '../routine/routine.module';
+import { SubscriptionModule } from '../subscription/subscription.module';
 
 @Module({
   controllers: [NutritionController],
@@ -39,6 +40,7 @@ import { RoutineModule } from '../routine/routine.module';
     HttpModule,
     AuthModule,
     RoutineModule,
+    SubscriptionModule,
     TypeOrmModule.forFeature([
       UserNutritionProfileEntity,
       FoodEntryEntity,

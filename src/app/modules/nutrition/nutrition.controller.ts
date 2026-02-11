@@ -25,6 +25,7 @@ import {
   Put,
   Query,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -32,6 +33,8 @@ import {
   CurrentUser,
   CurrentUserData,
 } from '../auth/decorators/current-user.decorator';
+import { SubscriptionGuard } from '../subscription/guards/subscription.guard';
+import { RequireSubscription } from '../subscription/decorators/require-subscription.decorator';
 import { NutritionService } from './nutrition.service';
 import { ProductService } from './services/product.service';
 import { MealService } from './services/meal.service';
@@ -337,6 +340,8 @@ export class NutritionController {
   // ==================== CUSTOM PRODUCTS ENDPOINTS ====================
 
   @Post('custom-products')
+  @UseGuards(SubscriptionGuard)
+  @RequireSubscription('create_custom_product')
   async createCustomProduct(@Body() dto: CreateCustomProductDto) {
     return this.productService.createCustomProduct(dto);
   }
@@ -389,6 +394,8 @@ export class NutritionController {
   // ==================== CUSTOM MEALS ENDPOINTS ====================
 
   @Post('custom-meals')
+  @UseGuards(SubscriptionGuard)
+  @RequireSubscription('create_custom_meal')
   async createCustomMeal(@Body() dto: CreateCustomMealDto) {
     return this.mealService.createCustomMeal(dto);
   }

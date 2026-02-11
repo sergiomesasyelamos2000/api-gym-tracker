@@ -13,3 +13,4 @@ export * from './shopping-list-item.entity';
 export * from './favorite-product.entity';
 export * from './custom-product.entity';
 export * from './custom-meal.entity';
+export * from './subscription.entity';

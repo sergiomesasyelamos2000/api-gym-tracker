@@ -13,6 +13,7 @@ import {
   RoutineSessionEntity,
   SetEntity,
   ShoppingListItemEntity,
+  SubscriptionEntity,
   UserEntity,
   UserNutritionProfileEntity,
 } from '@app/entity-data-models';
@@ -30,6 +31,7 @@ import { NutritionModule } from './modules/nutrition/nutrition.module';
 import { RoutineModule } from './modules/routine/routine.module';
 import { PopulateModule } from './services/populate.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { SubscriptionModule } from './modules/subscription/subscription.module';
 import { ExportController } from './controllers/export.controller';
 import { ExportService } from './services/export.service';
 
@@ -74,6 +76,7 @@ import { ExportService } from './services/export.service';
           FavoriteProductEntity,
           CustomProductEntity,
           CustomMealEntity,
+          SubscriptionEntity,
           UserEntity,
         ],
         synchronize: configService.get<string>('NODE_ENV') === 'development',
@@ -99,6 +102,7 @@ import { ExportService } from './services/export.service';
     NutritionModule,
     PopulateModule,
     AuthModule,
+    SubscriptionModule,
   ],
   controllers: [AppController, ExportController],
   providers: [AppService, ExportService],

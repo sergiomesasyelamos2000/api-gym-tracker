@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddPerformanceIndexes1738829296000 implements MigrationInterface {
-  name = 'AddPerformanceIndexes1738829296000';
+export class AddPerformanceIndexes1769466282209 implements MigrationInterface {
+  name = 'AddPerformanceIndexes1769466282209';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // RoutineEntity indexes
