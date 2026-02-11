@@ -22,7 +22,7 @@ import { UserEntity } from '@app/entity-data-models';
 
         return {
           secret,
-          signOptions: { expiresIn: '15m' }, // Default for access tokens
+          signOptions: { expiresIn: '1d' }, // Default for access tokens
         };
       },
     }),

@@ -307,17 +307,17 @@ export class AuthService {
     };
 
     const accessToken = this.jwtService.sign(payload, {
-      expiresIn: '15m', // Access token expires in 15 minutes
+      expiresIn: '1d', // Access token expires in 1 day
     });
 
     const refreshToken = this.jwtService.sign(payload, {
-      expiresIn: '7d', // Refresh token expires in 7 days
+      expiresIn: '30d', // Refresh token expires in 30 days
     });
 
     return {
       accessToken,
       refreshToken,
-      expiresIn: 900, // 15 minutes in seconds
+      expiresIn: 86400, // 1 day in seconds (24 * 60 * 60)
     };
   }
 
