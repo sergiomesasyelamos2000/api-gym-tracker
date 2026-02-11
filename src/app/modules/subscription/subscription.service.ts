@@ -157,7 +157,16 @@ export class SubscriptionService {
       subscription.price = (session.amount_total || 0) / 100; // Convert from cents
     } else {
       // Recurring subscription
-      const stripeSubscription = session.subscription as Stripe.Subscription;
+      // session.subscription puede ser un ID (string) o el objeto completo
+      let stripeSubscription: Stripe.Subscription;
+
+      if (typeof session.subscription === 'string') {
+        // Si es un ID, obtener el objeto completo de Stripe
+        stripeSubscription = await this.stripeService.getSubscription(session.subscription);
+      } else {
+        stripeSubscription = session.subscription as Stripe.Subscription;
+      }
+
       subscription.plan = planId;
       subscription.status = this.mapStripeStatus(stripeSubscription.status);
       subscription.stripeSubscriptionId = stripeSubscription.id;
