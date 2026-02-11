@@ -14,7 +14,8 @@ services:
     env_file:
       - .env
     depends_on:
-      - postgres
+      postgres:
+        condition: service_started
     deploy:
       resources:
         limits:
@@ -27,7 +28,20 @@ services:
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
       - GOOGLE_APPLICATION_CREDENTIALS=/usr/src/app/credentials/google-credentials.json
-    command: sh -c "npm run migration:run || true && npm run start:dev"
+    command: >
+      sh -c "
+        echo '⏳ Waiting for PostgreSQL to be ready...' &&
+        until nc -z postgres 5432; do
+          echo '⏳ PostgreSQL is unavailable - sleeping'
+          sleep 2
+        done &&
+        echo '✅ PostgreSQL is ready!' &&
+        echo '🔄 Running migrations...' &&
+        npm run migration:run &&
+        echo '✅ Migrations completed!' &&
+        echo '🚀 Starting API server...' &&
+        npm run start:dev
+      "
 
   postgres:
     image: postgres:15-alpine
