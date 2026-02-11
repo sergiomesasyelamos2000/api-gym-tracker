@@ -1,0 +1,71 @@
+[dotenv@17.2.4] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+query: SELECT version()
+query: SELECT * FROM current_schema()
+query: CREATE EXTENSION IF NOT EXISTS "uuid-ossp"
+query: SELECT * FROM "information_schema"."tables" WHERE "table_schema" = 'public' AND "table_name" = 'migrations'
+query: SELECT * FROM "migrations" "migrations" ORDER BY "id" DESC
+3 migrations are already loaded in the database.
+7 migrations were found in the source code.
+AddNutritionFieldsToFoodEntry1769780612212 is the last executed migration. It was executed on Fri Jan 30 2026 13:43:32 GMT+0000 (Coordinated Universal Time).
+6 migrations are new migrations must be executed.
+query: START TRANSACTION
+query: CREATE EXTENSION IF NOT EXISTS "uuid-ossp"
+query: CREATE TABLE "users" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "email" character varying NOT NULL, "name" character varying NOT NULL, "password" character varying, "picture" character varying, "googleId" character varying, "appleId" character varying, "refreshToken" character varying, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "UQ_97672ac88f789774dd47f7c8be3" UNIQUE ("email"), CONSTRAINT "PK_a3ffb1c0c8416b9fc6f907b7433" PRIMARY KEY ("id"))
+query failed: CREATE TABLE "users" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "email" character varying NOT NULL, "name" character varying NOT NULL, "password" character varying, "picture" character varying, "googleId" character varying, "appleId" character varying, "refreshToken" character varying, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "UQ_97672ac88f789774dd47f7c8be3" UNIQUE ("email"), CONSTRAINT "PK_a3ffb1c0c8416b9fc6f907b7433" PRIMARY KEY ("id"))
+error: error: relation "users" already exists
+Migration "Initial1738829295000" failed, error: relation "users" already exists
+query: ROLLBACK
+Error during migration run:
+QueryFailedError: relation "users" already exists
+    at PostgresQueryRunner.query (/usr/src/app/node_modules/typeorm/src/driver/postgres/PostgresQueryRunner.ts:325:19)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async Initial1738829295000.up (/usr/src/app/src/migrations/1738829295000-Initial.ts:8:5)
+    at async MigrationExecutor.executePendingMigrations (/usr/src/app/node_modules/src/migration/MigrationExecutor.ts:336:17)
+    at async DataSource.runMigrations (/usr/src/app/node_modules/src/data-source/DataSource.ts:404:13)
+    at async Object.handler (/usr/src/app/node_modules/src/commands/MigrationRunCommand.ts:76:13) {
+  query: 'CREATE TABLE "users" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "email" character varying NOT NULL, "name" character varying NOT NULL, "password" character varying, "picture" character varying, "googleId" character varying, "appleId" character varying, "refreshToken" character varying, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "UQ_97672ac88f789774dd47f7c8be3" UNIQUE ("email"), CONSTRAINT "PK_a3ffb1c0c8416b9fc6f907b7433" PRIMARY KEY ("id"))',
+  parameters: undefined,
+  driverError: error: relation "users" already exists
+      at /usr/src/app/node_modules/pg/lib/client.js:624:17
+      at processTicksAndRejections (node:internal/process/task_queues:95:5)
+      at async PostgresQueryRunner.query (/usr/src/app/node_modules/typeorm/src/driver/postgres/PostgresQueryRunner.ts:254:25)
+      at async Initial1738829295000.up (/usr/src/app/src/migrations/1738829295000-Initial.ts:8:5)
+      at async MigrationExecutor.executePendingMigrations (/usr/src/app/node_modules/src/migration/MigrationExecutor.ts:336:17)
+      at async DataSource.runMigrations (/usr/src/app/node_modules/src/data-source/DataSource.ts:404:13)
+      at async Object.handler (/usr/src/app/node_modules/src/commands/MigrationRunCommand.ts:76:13) {
+    length: 99,
+    severity: 'ERROR',
+    code: '42P07',
+    detail: undefined,
+    hint: undefined,
+    position: undefined,
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'heap.c',
+    line: '1150',
+    routine: 'heap_create_with_catalog'
+  },
+  length: 99,
+  severity: 'ERROR',
+  code: '42P07',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'heap.c',
+  line: '1150',
+  routine: 'heap_create_with_catalog'
+}

@@ -100,7 +100,7 @@ export class SubscriptionService {
     const cancelUrl = dto.cancelUrl || `${frontendUrl}/subscription/cancel`;
 
     const session = await this.stripeService.createCheckoutSession(
-      subscription.stripeCustomerId,
+      subscription.stripeCustomerId!,
       priceId,
       {
         userId,
