@@ -169,9 +169,19 @@ export class SubscriptionService {
         throw new BadRequestException('Subscription information missing from session');
       }
 
-      // Validar que tenemos los datos necesarios
-      const periodStart = stripeSubscription.current_period_start;
-      const periodEnd = stripeSubscription.current_period_end;
+      // Buscar las fechas del período - pueden estar en diferentes lugares según la versión de la API
+      let periodStart = stripeSubscription.current_period_start;
+      let periodEnd = stripeSubscription.current_period_end;
+
+      // Si no están en el objeto principal, buscar en los items (API version 2026-01-28.clover)
+      if (!periodStart || !periodEnd) {
+        const firstItem = stripeSubscription.items?.data?.[0];
+        if (firstItem) {
+          periodStart = firstItem.current_period_start;
+          periodEnd = firstItem.current_period_end;
+          this.logger.log(`Using period dates from subscription item: start=${periodStart}, end=${periodEnd}`);
+        }
+      }
 
       if (!periodStart || !periodEnd) {
         this.logger.error(`Missing period dates in subscription: ${JSON.stringify(stripeSubscription)}`);
@@ -446,9 +456,24 @@ export class SubscriptionService {
       return;
     }
 
+    // Buscar las fechas del período - pueden estar en diferentes lugares según la versión de la API
+    let periodStart = stripeSubscription.current_period_start;
+    let periodEnd = stripeSubscription.current_period_end;
+
+    // Si no están en el objeto principal, buscar en los items
+    if (!periodStart || !periodEnd) {
+      const firstItem = stripeSubscription.items?.data?.[0];
+      if (firstItem) {
+        periodStart = firstItem.current_period_start;
+        periodEnd = firstItem.current_period_end;
+      }
+    }
+
     subscription.status = this.mapStripeStatus(stripeSubscription.status);
-    subscription.currentPeriodStart = new Date(stripeSubscription.current_period_start * 1000);
-    subscription.currentPeriodEnd = new Date(stripeSubscription.current_period_end * 1000);
+    if (periodStart && periodEnd) {
+      subscription.currentPeriodStart = new Date(periodStart * 1000);
+      subscription.currentPeriodEnd = new Date(periodEnd * 1000);
+    }
     subscription.cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end;
 
     await this.subscriptionRepository.save(subscription);
