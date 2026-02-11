@@ -157,24 +157,41 @@ export class SubscriptionService {
       subscription.price = (session.amount_total || 0) / 100; // Convert from cents
     } else {
       // Recurring subscription
-      // session.subscription puede ser un ID (string) o el objeto completo
       let stripeSubscription: Stripe.Subscription;
 
       if (typeof session.subscription === 'string') {
         // Si es un ID, obtener el objeto completo de Stripe
+        this.logger.log(`Fetching subscription details for: ${session.subscription}`);
         stripeSubscription = await this.stripeService.getSubscription(session.subscription);
-      } else {
+      } else if (session.subscription && typeof session.subscription === 'object') {
         stripeSubscription = session.subscription as Stripe.Subscription;
+      } else {
+        throw new BadRequestException('Subscription information missing from session');
+      }
+
+      // Validar que tenemos los datos necesarios
+      if (!stripeSubscription.current_period_start || !stripeSubscription.current_period_end) {
+        this.logger.error(`Missing period dates in subscription: ${JSON.stringify(stripeSubscription)}`);
+        throw new BadRequestException('Invalid subscription data from Stripe');
       }
 
       subscription.plan = planId;
       subscription.status = this.mapStripeStatus(stripeSubscription.status);
       subscription.stripeSubscriptionId = stripeSubscription.id;
-      // @ts-ignore - Stripe API version typing issue
-      subscription.currentPeriodStart = new Date(stripeSubscription.current_period_start * 1000);
-      // @ts-ignore - Stripe API version typing issue
-      subscription.currentPeriodEnd = new Date(stripeSubscription.current_period_end * 1000);
-      // @ts-ignore - Stripe API version typing issue
+
+      // Convertir timestamps de Unix a Date objects
+      const periodStart = stripeSubscription.current_period_start;
+      const periodEnd = stripeSubscription.current_period_end;
+
+      subscription.currentPeriodStart = new Date(periodStart * 1000);
+      subscription.currentPeriodEnd = new Date(periodEnd * 1000);
+
+      // Validar que las fechas son válidas
+      if (isNaN(subscription.currentPeriodStart.getTime()) || isNaN(subscription.currentPeriodEnd.getTime())) {
+        this.logger.error(`Invalid dates - periodStart: ${periodStart}, periodEnd: ${periodEnd}`);
+        throw new BadRequestException('Invalid subscription period dates');
+      }
+
       subscription.price = (stripeSubscription.items.data[0]?.price?.unit_amount ?? 0) / 100;
     }
 

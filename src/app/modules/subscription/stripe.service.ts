@@ -115,7 +115,10 @@ export class StripeService {
    * Gets a subscription from Stripe
    */
   async getSubscription(subscriptionId: string): Promise<Stripe.Subscription> {
-    return await this.stripe.subscriptions.retrieve(subscriptionId);
+    this.logger.log(`Retrieving subscription: ${subscriptionId}`);
+    return await this.stripe.subscriptions.retrieve(subscriptionId, {
+      expand: ['items.data.price'],
+    });
   }
 
   /**
