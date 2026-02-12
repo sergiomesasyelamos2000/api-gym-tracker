@@ -9,22 +9,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { UserEntity } from './user.entity';
-
-export enum SubscriptionPlan {
-  FREE = 'free',
-  MONTHLY = 'monthly',
-  YEARLY = 'yearly',
-  LIFETIME = 'lifetime',
-}
-
-export enum SubscriptionStatus {
-  ACTIVE = 'active',
-  CANCELED = 'canceled',
-  EXPIRED = 'expired',
-  PAST_DUE = 'past_due',
-  INCOMPLETE = 'incomplete',
-  TRIAL = 'trial',
-}
+import { SubscriptionPlan, SubscriptionStatus } from '../dtos/shared-types';
 
 @Entity('subscriptions')
 export class SubscriptionEntity {

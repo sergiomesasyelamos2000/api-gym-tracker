@@ -1,16 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { RoutineExerciseEntity } from './routine-exercise.entity';
-
-export enum WeightUnit {
-  KG = 'kg',
-  LBS = 'lbs',
-}
-
-export enum RepsType {
-  REPS = 'reps',
-  RANGE = 'range',
-}
+import { WeightUnit, RepsType } from '../dtos/shared-types';
 
 @Entity('sets')
 export class SetEntity {

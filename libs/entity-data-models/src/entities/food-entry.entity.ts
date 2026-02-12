@@ -8,9 +8,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { UserEntity } from './user.entity'; // ← CAMBIO: Referencia a UserEntity
-
-export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
-export type FoodUnit = 'gram' | 'ml' | 'portion' | 'custom';
+import { MealType, FoodUnit } from '../dtos/shared-types';
 
 @Entity('food_entries')
 @Index(['userId', 'date'])

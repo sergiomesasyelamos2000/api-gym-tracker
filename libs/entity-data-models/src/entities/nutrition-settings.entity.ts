@@ -8,18 +8,13 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { UserEntity } from './user.entity';
-import { WeightUnit } from './set.entity';
-
-export type ActivityLevel =
-  | 'sedentary'
-  | 'lightly_active'
-  | 'moderately_active'
-  | 'very_active'
-  | 'extra_active';
-
-export type Gender = 'male' | 'female' | 'other';
-export type WeightGoal = 'lose' | 'maintain' | 'gain';
-export type HeightUnit = 'cm' | 'ft';
+import {
+  WeightUnit,
+  ActivityLevel,
+  Gender,
+  WeightGoal,
+  HeightUnit,
+} from '../dtos/shared-types';
 
 @Entity('user_nutrition_profiles')
 export class UserNutritionProfileEntity {

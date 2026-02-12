@@ -9,12 +9,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { ExerciseEntity } from './exercise.entity';
 import { RoutineEntity } from './routine.entity';
 import { SetEntity } from './set.entity';
-
-export interface ExerciseNote {
-  id: string;
-  text: string;
-  createdAt: string;
-}
+import { ExerciseNote } from '../dtos/shared-types';
 
 @Entity()
 export class RoutineExerciseEntity {

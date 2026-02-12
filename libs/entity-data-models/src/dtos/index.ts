@@ -17,10 +17,12 @@ export * from './custom-product.dto';
 export * from './custom-meal.dto';
 export * from './external-api.model';
 
-// These have class-validator decorators but are also exported from frontend-types.ts
-// Backend will use the classes, frontend will use the interfaces
-export * from './google-auth.dto';
-export * from './nutrition.model';
-export * from './chat.dto';
+// These DTOs exist in both frontend-types.ts (interfaces) and individual files (classes with decorators)
+// To avoid duplicate export errors, we comment these out
+// Backend controllers import directly from the specific files when needed (e.g., './google-auth.dto')
+// Frontend uses the interfaces from frontend-types.ts
+// export * from './google-auth.dto';
+// export * from './nutrition.model';
+// export * from './chat.dto';
 export * from './recognition.dto';
-export * from './subscription.dto';
+// export * from './subscription.dto';

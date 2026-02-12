@@ -4,7 +4,7 @@ import {
   Entity,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { FoodUnit } from './food-entry.entity';
+import { FoodUnit } from '../dtos/shared-types';
 
 @Entity('shopping_list_items')
 export class ShoppingListItemEntity {

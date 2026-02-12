@@ -1,13 +1,14 @@
 import {
   AuthResponseDto,
   GoogleAuthRequestDto,
-  GoogleLoginDto,
   LoginRequestDto,
   RefreshTokenRequestDto,
   RegisterRequestDto,
   UpdateUserProfileDto,
   UserResponseDto,
 } from '@app/entity-data-models';
+// Import GoogleLoginDto from frontend-types (interface)
+import type { GoogleLoginDto } from '@app/entity-data-models/dtos/frontend-types';
 import {
   Body,
   Controller,
@@ -52,7 +53,7 @@ export class AuthController {
 
   @Post('google/login') // Endpoint recomendado
   async googleLogin(@Body() body: GoogleLoginDto) {
-    return this.authService.googleLogin(body.token);
+    return this.authService.googleLogin(body.idToken);
   }
 
   @Post('google/callback')
