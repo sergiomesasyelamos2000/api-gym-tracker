@@ -8,14 +8,8 @@ async function checkGeminiModels() {
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    console.error('❌ GEMINI_API_KEY no encontrada en .env');
     process.exit(1);
   }
-
-  console.log('🔍 Verificando modelos disponibles de Gemini...\n');
-  console.log(
-    `API Key: ${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}\n`,
-  );
 
   const client = new GoogleGenerativeAI(apiKey);
 
@@ -30,16 +24,11 @@ async function checkGeminiModels() {
     'gemini-2.5-flash',
   ];
 
-  console.log('Probando modelos:\n');
-
   for (const modelName of modelsToTest) {
     try {
       const model = client.getGenerativeModel({ model: modelName });
       const result = await model.generateContent('Hola');
       const response = result.response.text();
-
-      console.log(`✅ ${modelName}: FUNCIONA`);
-      console.log(`   Respuesta: ${response.substring(0, 50)}...\n`);
     } catch (error: any) {
       if (error.status === 404) {
         console.log(`❌ ${modelName}: NO DISPONIBLE (404)`);

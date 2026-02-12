@@ -110,7 +110,6 @@ export class NutritionService {
           };
         } catch (error) {
           // User profile or training data not found, continue without full context
-          console.log('Error fetching user context:', error.message);
         }
       }
 

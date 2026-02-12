@@ -187,9 +187,7 @@ export class ProductService {
             productCodes.add(product.code);
           }
         });
-      } catch (error) {
-        console.log('Error en búsqueda general:', error.message);
-      }
+      } catch (error) {}
 
       // Estrategia 2: Si es una marca española o hay pocos resultados, buscar específicamente por marca
       if (isSpanishBrand || allProducts.length < 10) {

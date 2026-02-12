@@ -34,17 +34,14 @@ export function setup() {
   );
 
   if (registerRes.status === 201 || registerRes.status === 200) {
-    console.log('Stress test user created successfully');
     return testUser;
   } else {
-    console.error('Failed to create stress test user:', registerRes.body);
     return null;
   }
 }
 
 export default function (data) {
   if (!data) {
-    console.error('No test user available, skipping test');
     return;
   }
 
@@ -108,6 +105,5 @@ export default function (data) {
 
 export function teardown(data) {
   if (data) {
-    console.log('Stress test completed. User:', data.email);
   }
 }

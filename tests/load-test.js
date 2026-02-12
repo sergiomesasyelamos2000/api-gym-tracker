@@ -37,17 +37,14 @@ export function setup() {
   );
 
   if (registerRes.status === 201 || registerRes.status === 200) {
-    console.log('Test user created successfully');
     return testUser;
   } else {
-    console.error('Failed to create test user:', registerRes.body);
     return null;
   }
 }
 
 export default function (data) {
   if (!data) {
-    console.error('No test user available, skipping test');
     return;
   }
 
@@ -136,6 +133,5 @@ export default function (data) {
 // Teardown: Opcional - limpiar usuario de prueba
 export function teardown(data) {
   if (data) {
-    console.log('Test completed. User:', data.email);
   }
 }
