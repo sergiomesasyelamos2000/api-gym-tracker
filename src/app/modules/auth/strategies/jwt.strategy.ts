@@ -37,7 +37,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     return {
-      id: user.id,
+      sub: user.id,   // ✅ Use 'sub' to match JWT payload convention
+      id: user.id,    // ✅ Keep 'id' for backward compatibility
       email: user.email,
       name: user.name,
     };
