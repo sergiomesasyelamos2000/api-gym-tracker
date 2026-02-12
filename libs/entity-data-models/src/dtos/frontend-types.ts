@@ -354,3 +354,27 @@ export interface CheckoutSessionResponseDto {
 export interface CustomerPortalResponseDto {
   portalUrl: string;
 }
+
+// ============================================
+// Routine Session
+// ============================================
+
+export interface RoutineSessionEntity {
+  id: string;
+  routineId?: string;
+  exercises: {
+    exerciseId: string;
+    name: string;
+    sets: {
+      weight: number;
+      reps: number;
+      completed: boolean;
+      isRecord?: boolean;
+    }[];
+  }[];
+  totalTime: number;
+  totalWeight: number;
+  completedSets: number;
+  createdAt: Date;
+  _isPending?: boolean;
+}
