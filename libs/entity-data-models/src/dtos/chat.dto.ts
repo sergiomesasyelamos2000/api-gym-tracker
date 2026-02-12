@@ -4,7 +4,7 @@ import {
   ActivityLevel,
   Gender,
   WeightGoal,
-} from '../entities/user-nutrition-profile.entity';
+} from './shared-types';
 
 export class ChatMessageDto {
   @IsString()

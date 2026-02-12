@@ -1,4 +1,4 @@
-import { ExerciseNote } from '../entities';
+import { ExerciseNote } from './shared-types';
 import { SetRequestDto } from './set.model';
 
 export interface ExerciseRequestDto {

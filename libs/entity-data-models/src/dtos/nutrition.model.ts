@@ -8,13 +8,15 @@ import {
   ValidateNested,
   IsIn,
 } from 'class-validator';
-import { FoodUnit, MealType, WeightUnit } from '../entities';
 import {
+  FoodUnit,
+  MealType,
+  WeightUnit,
   ActivityLevel,
   Gender,
   HeightUnit,
   WeightGoal,
-} from '../entities/user-nutrition-profile.entity';
+} from './shared-types';
 
 // Nested DTOs
 export class UserAnthropometricsDto {

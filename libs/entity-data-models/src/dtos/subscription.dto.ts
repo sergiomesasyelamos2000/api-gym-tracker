@@ -2,7 +2,7 @@ import { IsBoolean, IsEnum, IsOptional, IsString, IsUrl } from 'class-validator'
 import {
   SubscriptionPlan,
   SubscriptionStatus,
-} from '../entities/subscription.entity';
+} from './shared-types';
 
 // Request DTOs
 export class CreateCheckoutSessionRequestDto {
