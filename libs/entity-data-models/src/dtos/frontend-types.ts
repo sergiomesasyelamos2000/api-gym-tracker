@@ -266,6 +266,9 @@ export interface UserContext {
       preferredTime: string;
     };
   };
+  email?: string;
+  name?: string;
+  picture?: string;
 }
 
 // ============================================
