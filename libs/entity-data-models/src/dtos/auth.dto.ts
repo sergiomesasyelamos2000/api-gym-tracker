@@ -26,6 +26,7 @@ export interface RefreshTokenRequestDto {
 }
 
 export interface UpdateUserProfileDto {
+  email?: string;
   name?: string;
   picture?: string;
 }

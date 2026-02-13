@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   ConflictException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -19,6 +20,7 @@ import {
   AuthTokensDto,
   AuthResponseDto,
 } from '@app/entity-data-models';
+import cloudinary from '../../../config/cloudinary.config';
 import { OAuth2Client } from 'google-auth-library';
 
 @Injectable()
@@ -284,13 +286,37 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
+    if (updates.email !== undefined) {
+      const normalizedEmail = updates.email.trim().toLowerCase();
+
+      if (!normalizedEmail) {
+        throw new BadRequestException('Email cannot be empty');
+      }
+
+      if (normalizedEmail !== user.email) {
+        const existingUser = await this.userRepository.findOne({
+          where: { email: normalizedEmail },
+        });
+
+        if (existingUser && existingUser.id !== userId) {
+          throw new ConflictException('User with this email already exists');
+        }
+      }
+
+      user.email = normalizedEmail;
+    }
+
     // Update fields
     if (updates.name !== undefined) {
-      user.name = updates.name;
+      user.name = updates.name.trim();
     }
 
     if (updates.picture !== undefined) {
-      user.picture = updates.picture;
+      if (updates.picture && updates.picture.startsWith('data:image/')) {
+        user.picture = await this.uploadProfileImage(updates.picture);
+      } else {
+        user.picture = updates.picture;
+      }
     }
 
     const updatedUser = await this.userRepository.save(user);
@@ -359,5 +385,23 @@ export class AuthService {
       accessToken,
       userInfo,
     });
+  }
+
+  private async uploadProfileImage(base64Image: string): Promise<string> {
+    try {
+      const result = await cloudinary.uploader.upload(base64Image, {
+        folder: 'users/profile',
+        resource_type: 'image',
+        transformation: [
+          { width: 512, height: 512, crop: 'limit' },
+          { quality: 'auto' },
+          { fetch_format: 'auto' },
+        ],
+      });
+
+      return result.secure_url;
+    } catch (error) {
+      throw new BadRequestException('No se pudo procesar la imagen de perfil');
+    }
   }
 }
