@@ -25,6 +25,20 @@ export interface RefreshTokenRequestDto {
   refreshToken: string;
 }
 
+export interface ForgotPasswordRequestDto {
+  email: string;
+}
+
+export interface ForgotPasswordResponseDto {
+  message: string;
+}
+
+export interface ResetPasswordRequestDto {
+  email: string;
+  code: string;
+  newPassword: string;
+}
+
 export interface UpdateUserProfileDto {
   email?: string;
   name?: string;

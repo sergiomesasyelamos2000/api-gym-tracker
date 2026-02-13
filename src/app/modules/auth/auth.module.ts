@@ -9,6 +9,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from '../../strategies/google.strategy';
 import { AppleStrategy } from '../../strategies/apple.strategy';
 import { UserEntity } from '@app/entity-data-models';
+import { EmailService } from './email.service';
 
 @Module({
   imports: [
@@ -29,7 +30,7 @@ import { UserEntity } from '@app/entity-data-models';
     TypeOrmModule.forFeature([UserEntity]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, GoogleStrategy],
+  providers: [AuthService, JwtStrategy, GoogleStrategy, EmailService],
   exports: [AuthService, JwtStrategy, PassportModule],
 })
 export class AuthModule {}

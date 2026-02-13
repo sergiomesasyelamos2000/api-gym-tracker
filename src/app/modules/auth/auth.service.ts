@@ -11,10 +11,13 @@ import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import {
   UserEntity,
+  ForgotPasswordRequestDto,
+  ForgotPasswordResponseDto,
   LoginRequestDto,
   RegisterRequestDto,
   GoogleAuthRequestDto,
   RefreshTokenRequestDto,
+  ResetPasswordRequestDto,
   UpdateUserProfileDto,
   UserResponseDto,
   AuthTokensDto,
@@ -22,6 +25,16 @@ import {
 } from '@app/entity-data-models';
 import cloudinary from '../../../config/cloudinary.config';
 import { OAuth2Client } from 'google-auth-library';
+import { createHash, randomBytes } from 'crypto';
+import { EmailService } from './email.service';
+
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MAX_LENGTH = 72;
+const PASSWORD_RESET_CODE_TTL_MS = 10 * 60 * 1000;
+const PASSWORD_RESET_CODE_TTL_MINUTES = 10;
+const PASSWORD_RESET_CODE_LENGTH = 6;
+const PASSWORD_RESET_MAX_ATTEMPTS = 5;
+const PASSWORD_RESET_RESEND_COOLDOWN_MS = 60 * 1000;
 
 @Injectable()
 export class AuthService {
@@ -30,6 +43,7 @@ export class AuthService {
     private jwtService: JwtService,
     @InjectRepository(UserEntity)
     private userRepository: Repository<UserEntity>,
+    private readonly emailService: EmailService,
   ) {
     this.googleClient = new OAuth2Client();
   }
@@ -37,7 +51,12 @@ export class AuthService {
   // ==================== LOGIN ====================
 
   async login(credentials: LoginRequestDto): Promise<AuthResponseDto> {
-    const { email, password } = credentials;
+    const email = credentials.email.trim().toLowerCase();
+    const { password } = credentials;
+
+    if (!this.isValidEmail(email)) {
+      throw new BadRequestException('Email inválido');
+    }
 
     // Find user by email
     const user = await this.userRepository.findOne({ where: { email } });
@@ -73,7 +92,21 @@ export class AuthService {
   // ==================== REGISTER ====================
 
   async register(userData: RegisterRequestDto): Promise<AuthResponseDto> {
-    const { email, password, name } = userData;
+    const email = userData.email.trim().toLowerCase();
+    const password = userData.password;
+    const name = userData.name.trim();
+
+    if (!this.isValidEmail(email)) {
+      throw new BadRequestException('Email inválido');
+    }
+
+    if (name.length < 2 || name.length > 80) {
+      throw new BadRequestException(
+        'El nombre debe tener entre 2 y 80 caracteres',
+      );
+    }
+
+    this.assertStrongPassword(password);
 
     // Check if user already exists
     const existingUser = await this.userRepository.findOne({
@@ -262,6 +295,107 @@ export class AuthService {
     }
   }
 
+  async forgotPassword(
+    dto: ForgotPasswordRequestDto,
+  ): Promise<ForgotPasswordResponseDto> {
+    const email = dto.email.trim().toLowerCase();
+
+    if (!this.isValidEmail(email)) {
+      throw new BadRequestException('Email inválido');
+    }
+
+    const user = await this.userRepository.findOne({ where: { email } });
+
+    if (!user || !user.password) {
+      return {
+        message:
+          'Si el email existe, recibirás un código para restablecer tu contraseña.',
+      };
+    }
+
+    const now = Date.now();
+    if (
+      user.resetPasswordRequestedAt &&
+      now - user.resetPasswordRequestedAt.getTime() <
+        PASSWORD_RESET_RESEND_COOLDOWN_MS
+    ) {
+      return {
+        message:
+          'Si el email existe, recibirás un código para restablecer tu contraseña.',
+      };
+    }
+
+    const code = this.generateNumericCode(PASSWORD_RESET_CODE_LENGTH);
+    const codeHash = this.hashToken(code);
+
+    user.resetPasswordTokenHash = codeHash;
+    user.resetPasswordTokenExpiresAt = new Date(now + PASSWORD_RESET_CODE_TTL_MS);
+    user.resetPasswordAttempts = 0;
+    user.resetPasswordRequestedAt = new Date(now);
+
+    await this.userRepository.save(user);
+    await this.emailService.sendPasswordResetCode(
+      email,
+      code,
+      PASSWORD_RESET_CODE_TTL_MINUTES,
+    );
+
+    return {
+      message:
+        'Si el email existe, recibirás un código para restablecer tu contraseña.',
+    };
+  }
+
+  async resetPassword(dto: ResetPasswordRequestDto): Promise<void> {
+    const email = dto.email.trim().toLowerCase();
+    const code = dto.code.trim();
+    const newPassword = dto.newPassword;
+
+    if (!this.isValidEmail(email)) {
+      throw new BadRequestException('Email inválido');
+    }
+
+    if (!/^\d{6}$/.test(code)) {
+      throw new BadRequestException('Código inválido');
+    }
+
+    this.assertStrongPassword(newPassword);
+
+    const user = await this.userRepository.findOne({ where: { email } });
+
+    if (!user || !user.resetPasswordTokenHash || !user.resetPasswordTokenExpiresAt) {
+      throw new BadRequestException('Código inválido o expirado');
+    }
+
+    if (user.resetPasswordTokenExpiresAt.getTime() < Date.now()) {
+      throw new BadRequestException('Código inválido o expirado');
+    }
+
+    if (user.resetPasswordAttempts >= PASSWORD_RESET_MAX_ATTEMPTS) {
+      user.resetPasswordTokenHash = undefined;
+      user.resetPasswordTokenExpiresAt = undefined;
+      user.resetPasswordAttempts = 0;
+      user.resetPasswordRequestedAt = undefined;
+      await this.userRepository.save(user);
+      throw new BadRequestException('Código inválido o expirado');
+    }
+
+    if (this.hashToken(code) !== user.resetPasswordTokenHash) {
+      user.resetPasswordAttempts += 1;
+      await this.userRepository.save(user);
+      throw new BadRequestException('Código inválido o expirado');
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.resetPasswordTokenHash = undefined;
+    user.resetPasswordTokenExpiresAt = undefined;
+    user.resetPasswordAttempts = 0;
+    user.resetPasswordRequestedAt = undefined;
+    user.refreshToken = undefined;
+
+    await this.userRepository.save(user);
+  }
+
   // ==================== GET CURRENT USER ====================
 
   async getCurrentUser(userId: string): Promise<UserResponseDto> {
@@ -403,5 +537,45 @@ export class AuthService {
     } catch (error) {
       throw new BadRequestException('No se pudo procesar la imagen de perfil');
     }
+  }
+
+  private isValidEmail(email: string): boolean {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  }
+
+  private assertStrongPassword(password: string): void {
+    const hasMinLength = password.length >= PASSWORD_MIN_LENGTH;
+    const hasMaxLength = password.length <= PASSWORD_MAX_LENGTH;
+    const hasUpper = /[A-Z]/.test(password);
+    const hasLower = /[a-z]/.test(password);
+    const hasDigit = /\d/.test(password);
+    const hasSpecial = /[^A-Za-z0-9]/.test(password);
+
+    if (
+      !hasMinLength ||
+      !hasMaxLength ||
+      !hasUpper ||
+      !hasLower ||
+      !hasDigit ||
+      !hasSpecial
+    ) {
+      throw new BadRequestException(
+        'La contraseña debe tener 8-72 caracteres e incluir mayúscula, minúscula, número y símbolo',
+      );
+    }
+  }
+
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
+  private generateNumericCode(length: number): string {
+    const bytes = randomBytes(length);
+    let code = '';
+    for (let i = 0; i < length; i += 1) {
+      code += (bytes[i] % 10).toString();
+    }
+    return code;
   }
 }

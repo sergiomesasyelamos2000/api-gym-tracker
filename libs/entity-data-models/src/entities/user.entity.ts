@@ -35,6 +35,18 @@ export class UserEntity {
   @Column({ nullable: true })
   refreshToken?: string; // Para almacenar el refresh token
 
+  @Column({ nullable: true })
+  resetPasswordTokenHash?: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  resetPasswordTokenExpiresAt?: Date;
+
+  @Column({ type: 'int', default: 0 })
+  resetPasswordAttempts!: number;
+
+  @Column({ type: 'timestamp', nullable: true })
+  resetPasswordRequestedAt?: Date;
+
   @Column({ type: 'int', default: 0 })
   aiChatUsageCount!: number;
 

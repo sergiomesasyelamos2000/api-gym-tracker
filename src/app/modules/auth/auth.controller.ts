@@ -1,9 +1,12 @@
 import {
   AuthResponseDto,
   GoogleAuthRequestDto,
+  ForgotPasswordRequestDto,
+  ForgotPasswordResponseDto,
   LoginRequestDto,
   RefreshTokenRequestDto,
   RegisterRequestDto,
+  ResetPasswordRequestDto,
   UpdateUserProfileDto,
   UserResponseDto,
 } from '@app/entity-data-models';
@@ -89,6 +92,23 @@ export class AuthController {
     @Body() dto: RefreshTokenRequestDto,
   ): Promise<AuthResponseDto> {
     return this.authService.refreshToken(dto);
+  }
+
+  @Post('forgot-password')
+  @ApiOperation({ summary: 'Request password reset token' })
+  async forgotPassword(
+    @Body() dto: ForgotPasswordRequestDto,
+  ): Promise<ForgotPasswordResponseDto> {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Post('reset-password')
+  @ApiOperation({ summary: 'Reset password with verification code' })
+  async resetPassword(
+    @Body() dto: ResetPasswordRequestDto,
+  ): Promise<{ message: string }> {
+    await this.authService.resetPassword(dto);
+    return { message: 'Password reset successful' };
   }
 
   @Post('logout')
