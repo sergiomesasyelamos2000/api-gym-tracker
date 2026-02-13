@@ -3,13 +3,19 @@ import {
   RecognizeFoodResponseDto,
   UserContext,
   RoutineSessionEntity,
+  UserEntity,
 } from '@app/entity-data-models';
 import { HttpService } from '@nestjs/axios';
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { ChatMessage } from '../../services/ai-provider.base';
 import { AIService } from '../../services/ai.service';
 import { RoutineService } from '../routine/routine.service';
+import { SubscriptionService } from '../subscription/subscription.service';
 import { ProfileService } from './services/profile.service';
+
+const FREE_TIER_TOTAL_LIMIT = 10;
 
 @Injectable()
 export class NutritionService {
@@ -18,7 +24,39 @@ export class NutritionService {
     private readonly aiService: AIService,
     private readonly routineService: RoutineService,
     private readonly profileService: ProfileService,
+    private readonly subscriptionService: SubscriptionService,
+    @InjectRepository(UserEntity)
+    private readonly userRepository: Repository<UserEntity>,
   ) {}
+
+  async getChatUsage(userId: string) {
+    const subscription = await this.subscriptionService.getSubscriptionStatus(
+      userId,
+    );
+
+    if (subscription.isPremium) {
+      return {
+        isPremium: true,
+        used: 0,
+        limit: null,
+        remaining: null,
+      };
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'aiChatUsageCount'],
+    });
+
+    const used = user?.aiChatUsageCount ?? 0;
+
+    return {
+      isPremium: false,
+      used,
+      limit: FREE_TIER_TOTAL_LIMIT,
+      remaining: Math.max(0, FREE_TIER_TOTAL_LIMIT - used),
+    };
+  }
 
   // CHATBOT - Multi-API with context
 
@@ -28,6 +66,23 @@ export class NutritionService {
     userId?: string,
   ): Promise<ChatResponseDto> {
     try {
+      let shouldIncrementUsage = false;
+
+      if (userId) {
+        const usage = await this.getChatUsage(userId);
+        if (
+          !usage.isPremium &&
+          usage.remaining !== null &&
+          usage.remaining <= 0
+        ) {
+          throw new ForbiddenException(
+            `Has alcanzado el límite de ${FREE_TIER_TOTAL_LIMIT} consultas en el plan gratuito. Actualiza a Premium para consultas ilimitadas.`,
+          );
+        }
+
+        shouldIncrementUsage = !usage.isPremium;
+      }
+
       // Build conversation history
       const messages: ChatMessage[] = [];
 
@@ -115,6 +170,10 @@ export class NutritionService {
 
       // Call AI service with multi-provider fallback
       const response = await this.aiService.chat(messages, userContext);
+
+      if (shouldIncrementUsage && userId) {
+        await this.userRepository.increment({ id: userId }, 'aiChatUsageCount', 1);
+      }
 
       return {
         reply: response.content,

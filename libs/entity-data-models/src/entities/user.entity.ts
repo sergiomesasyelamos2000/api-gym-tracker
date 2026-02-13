@@ -35,6 +35,9 @@ export class UserEntity {
   @Column({ nullable: true })
   refreshToken?: string; // Para almacenar el refresh token
 
+  @Column({ type: 'int', default: 0 })
+  aiChatUsageCount!: number;
+
   @CreateDateColumn()
   createdAt!: Date;
 

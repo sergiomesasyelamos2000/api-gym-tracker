@@ -65,6 +65,11 @@ export class NutritionController {
     return response;
   }
 
+  @Get('usage/:userId')
+  async getChatUsage(@Param('userId') userId: string) {
+    return this.nutritionService.getChatUsage(userId);
+  }
+
   @Post('photo')
   @UseInterceptors(FileInterceptor('file'))
   async analyzePhoto(@UploadedFile() file: Express.Request) {

@@ -4,6 +4,7 @@ import {
   FavoriteProductEntity,
   FoodEntryEntity,
   ShoppingListItemEntity,
+  UserEntity,
   UserNutritionProfileEntity,
 } from '@app/entity-data-models';
 import { HttpModule } from '@nestjs/axios';
@@ -48,6 +49,7 @@ import { SubscriptionModule } from '../subscription/subscription.module';
       FavoriteProductEntity,
       CustomProductEntity,
       CustomMealEntity,
+      UserEntity,
     ]),
   ],
 })
