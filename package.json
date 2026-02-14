@@ -30,6 +30,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@getbrevo/brevo": "^2.5.0",
     "@google-cloud/translate": "^9.2.1",
     "@google/generative-ai": "^0.24.1",
     "@iamtraction/google-translate": "^2.0.1",

@@ -36,6 +36,8 @@ services:
           sleep 2
         done &&
         echo '✅ PostgreSQL is ready!' &&
+        echo '📦 Installing dependencies...' &&
+        npm install &&
         echo '🔄 Running migrations...' &&
         npm run migration:run &&
         echo '✅ Migrations completed!' &&

@@ -1,17 +1,30 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as brevo from '@getbrevo/brevo';
 
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private readonly resendApiKey: string | null;
-  private readonly fromEmail: string;
+  private readonly brevoApiKey: string | null;
+  private readonly fromEmail: string | null;
+  private readonly fromName: string;
+  private readonly apiInstance: brevo.TransactionalEmailsApi;
 
   constructor(private readonly configService: ConfigService) {
-    this.resendApiKey = this.configService.get<string>('RESEND_API_KEY') || null;
+    this.brevoApiKey = this.configService.get<string>('BREVO_API_KEY') || null;
     this.fromEmail =
-      this.configService.get<string>('RESEND_FROM_EMAIL') ||
-      'FitTrack <no-reply@fittrack.app>';
+      this.configService.get<string>('BREVO_FROM_EMAIL')?.trim() || null;
+    this.fromName =
+      this.configService.get<string>('BREVO_FROM_NAME') || 'FitTrack App';
+
+    this.apiInstance = new brevo.TransactionalEmailsApi();
+
+    if (this.brevoApiKey) {
+      this.apiInstance.setApiKey(
+        brevo.TransactionalEmailsApiApiKeys.apiKey,
+        this.brevoApiKey,
+      );
+    }
   }
 
   async sendPasswordResetCode(
@@ -19,29 +32,29 @@ export class EmailService {
     code: string,
     expiresMinutes: number,
   ): Promise<void> {
-    if (!this.resendApiKey) {
+    if (
+      !this.brevoApiKey ||
+      !this.fromEmail ||
+      !this.isValidEmail(this.fromEmail)
+    ) {
       if (process.env.NODE_ENV !== 'production') {
         this.logger.warn(
-          `[DEV] RESEND_API_KEY no configurado. OTP para ${toEmail}: ${code}`,
+          `[DEV] Config email incompleta (BREVO_API_KEY/BREVO_FROM_EMAIL). OTP para ${toEmail}: ${code}`,
         );
         return;
       }
+
       throw new InternalServerErrorException(
         'Servicio de email no configurado',
       );
     }
 
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.resendApiKey}`,
-      },
-      body: JSON.stringify({
-        from: this.fromEmail,
-        to: [toEmail],
+    try {
+      await this.apiInstance.sendTransacEmail({
+        sender: { email: this.fromEmail, name: this.fromName },
+        to: [{ email: toEmail }],
         subject: 'Código para restablecer tu contraseña',
-        html: `
+        htmlContent: `
         <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
           <h2 style="margin-bottom: 12px;">Restablecer contraseña</h2>
           <p>Usa este código para restablecer tu contraseña:</p>
@@ -52,15 +65,18 @@ export class EmailService {
           </p>
         </div>
       `,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      this.logger.error(`Resend API error: ${response.status} - ${errorText}`);
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : JSON.stringify(error);
+      this.logger.error(`Brevo API error: ${errorMessage}`);
       throw new InternalServerErrorException(
         'No se pudo enviar el correo de recuperación',
       );
     }
+  }
+
+  private isValidEmail(email: string): boolean {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   }
 }
