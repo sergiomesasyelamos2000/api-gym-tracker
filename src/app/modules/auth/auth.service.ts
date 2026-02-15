@@ -19,10 +19,8 @@ import {
   RefreshTokenRequestDto,
   ResetPasswordRequestDto,
   UpdateUserProfileDto,
-  UserResponseDto,
-  AuthTokensDto,
-  AuthResponseDto,
 } from '@app/entity-data-models';
+import type { AuthResponse, AuthTokens, UserResponse } from '@sergiomesasyelamos2000/shared';
 import cloudinary from '../../../config/cloudinary.config';
 import { OAuth2Client } from 'google-auth-library';
 import { createHash, randomBytes } from 'crypto';
@@ -50,7 +48,7 @@ export class AuthService {
 
   // ==================== LOGIN ====================
 
-  async login(credentials: LoginRequestDto): Promise<AuthResponseDto> {
+  async login(credentials: LoginRequestDto): Promise<AuthResponse> {
     const email = credentials.email.trim().toLowerCase();
     const { password } = credentials;
 
@@ -91,7 +89,7 @@ export class AuthService {
 
   // ==================== REGISTER ====================
 
-  async register(userData: RegisterRequestDto): Promise<AuthResponseDto> {
+  async register(userData: RegisterRequestDto): Promise<AuthResponse> {
     const email = userData.email.trim().toLowerCase();
     const password = userData.password;
     const name = userData.name.trim();
@@ -144,7 +142,7 @@ export class AuthService {
 
   // ==================== GOOGLE AUTH ====================
 
-  async googleAuth(googleData: GoogleAuthRequestDto): Promise<AuthResponseDto> {
+  async googleAuth(googleData: GoogleAuthRequestDto): Promise<AuthResponse> {
     const { userInfo } = googleData;
 
     // Try to find existing user by Google ID or email
@@ -189,7 +187,7 @@ export class AuthService {
 
   // ==================== GOOGLE AUTH SEGURO ====================
 
-  async googleLogin(token: string): Promise<AuthResponseDto> {
+  async googleLogin(token: string): Promise<AuthResponse> {
     try {
       // 1. VERIFICAR EL TOKEN CON GOOGLE
       // Filtrar IDs que no estén definidos en las variables de entorno
@@ -260,7 +258,7 @@ export class AuthService {
 
   // ==================== REFRESH TOKEN ====================
 
-  async refreshToken(dto: RefreshTokenRequestDto): Promise<AuthResponseDto> {
+  async refreshToken(dto: RefreshTokenRequestDto): Promise<AuthResponse> {
     const { refreshToken } = dto;
 
     try {
@@ -398,7 +396,7 @@ export class AuthService {
 
   // ==================== GET CURRENT USER ====================
 
-  async getCurrentUser(userId: string): Promise<UserResponseDto> {
+  async getCurrentUser(userId: string): Promise<UserResponse> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
 
     if (!user) {
@@ -413,7 +411,7 @@ export class AuthService {
   async updateUserProfile(
     userId: string,
     updates: UpdateUserProfileDto,
-  ): Promise<UserResponseDto> {
+  ): Promise<UserResponse> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
 
     if (!user) {
@@ -460,7 +458,7 @@ export class AuthService {
 
   // ==================== HELPER METHODS ====================
 
-  private async generateTokens(user: UserEntity): Promise<AuthTokensDto> {
+  private async generateTokens(user: UserEntity): Promise<AuthTokens> {
     const payload = {
       sub: user.id,
       email: user.email,
@@ -481,7 +479,7 @@ export class AuthService {
     };
   }
 
-  private mapUserToDto(user: UserEntity): UserResponseDto {
+  private mapUserToDto(user: UserEntity): UserResponse {
     return {
       id: user.id,
       email: user.email,
@@ -513,7 +511,7 @@ export class AuthService {
   async validateGoogleAccessToken(
     accessToken: string,
     userInfo: { email: string; name: string; id: string; picture?: string },
-  ): Promise<AuthResponseDto> {
+  ): Promise<AuthResponse> {
     // This is now handled by googleAuth method
     return this.googleAuth({
       accessToken,

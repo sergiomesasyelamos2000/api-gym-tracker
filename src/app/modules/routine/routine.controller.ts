@@ -3,12 +3,18 @@ import {
   RoutineRequestDto,
   RoutineSessionRequestDto,
 } from '@app/entity-data-models';
+import type {
+  GlobalRoutineStats,
+  RoutineResponse,
+  RoutineSession,
+} from '@sergiomesasyelamos2000/shared';
 import {
   Body,
   Controller,
   Delete,
   Get,
   HttpCode,
+  NotFoundException,
   Param,
   Post,
   Put,
@@ -23,9 +29,16 @@ import {
   CurrentUserData,
 } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { SubscriptionGuard } from '../subscription/guards/subscription.guard';
 import { RequireSubscription } from '../subscription/decorators/require-subscription.decorator';
+import { SubscriptionGuard } from '../subscription/guards/subscription.guard';
 import { RoutineService } from './routine.service';
+import {
+  mapGlobalStatsToContract,
+  mapRoutineListToContract,
+  mapRoutineToContract,
+  mapSessionListToContract,
+  mapSessionToContract,
+} from './mappers/routine-contract.mapper';
 
 @Controller('routines')
 @UseGuards(JwtAuthGuard)
@@ -36,10 +49,6 @@ export class RoutineController {
     private readonly routineService: RoutineService,
   ) {}
 
-  // ⚠️ IMPORTANT: Specific routes MUST come BEFORE parameterized routes
-  // Otherwise NestJS will match /routines/sessions as /routines/:id
-
-  // 🧪 TEST ENDPOINT - NO AUTH - Remove after testing
   @Get('test-no-auth')
   async testNoAuth() {
     return {
@@ -49,17 +58,17 @@ export class RoutineController {
   }
 
   @Get('sessions')
-  async getAllSessions(@CurrentUser() user: CurrentUserData) {
+  async getAllSessions(@CurrentUser() user: CurrentUserData): Promise<RoutineSession[]> {
     const result = await this.routineService.getAllSessions(user.id);
-    return result;
+    return mapSessionListToContract(result);
   }
 
   @Get('stats/global')
   @UseInterceptors(CacheInterceptor)
-  @CacheTTL(60) // 1 minute - stats change frequently
-  async getGlobalStats(@CurrentUser() user: CurrentUserData) {
+  @CacheTTL(60)
+  async getGlobalStats(@CurrentUser() user: CurrentUserData): Promise<GlobalRoutineStats> {
     const result = await this.routineService.getGlobalStats(user.id);
-    return result;
+    return mapGlobalStatsToContract(result);
   }
 
   @Post()
@@ -68,18 +77,27 @@ export class RoutineController {
   async create(
     @Body() routineRequestDto: RoutineRequestDto,
     @CurrentUser() user: CurrentUserData,
-  ) {
-    return await this.routineService.create(routineRequestDto, user.id);
+  ): Promise<RoutineResponse> {
+    const created = await this.routineService.create(routineRequestDto, user.id);
+    return mapRoutineToContract(created);
   }
 
   @Get()
-  async findAll(@CurrentUser() user: CurrentUserData) {
-    return this.routineService.findAll(user.id);
+  async findAll(@CurrentUser() user: CurrentUserData): Promise<RoutineResponse[]> {
+    const routines = await this.routineService.findAll(user.id);
+    return mapRoutineListToContract(routines);
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
-    return await this.routineService.findOneWithExercises(id, user.id);
+  async findOne(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserData,
+  ): Promise<RoutineResponse> {
+    const routine = await this.routineService.findOneWithExercises(id, user.id);
+    if (!routine) {
+      throw new NotFoundException(`Routine with id ${id} not found`);
+    }
+    return mapRoutineToContract(routine);
   }
 
   @Put(':id')
@@ -87,8 +105,9 @@ export class RoutineController {
     @Param('id') id: string,
     @Body() routineRequestDto: RoutineRequestDto,
     @CurrentUser() user: CurrentUserData,
-  ) {
-    return await this.routineService.update(id, routineRequestDto, user.id);
+  ): Promise<RoutineResponse> {
+    const updated = await this.routineService.update(id, routineRequestDto, user.id);
+    return mapRoutineToContract(updated);
   }
 
   @Delete(':id')
@@ -104,8 +123,9 @@ export class RoutineController {
   async duplicateRoutine(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserData,
-  ) {
-    return await this.routineService.duplicate(id, user.id);
+  ): Promise<RoutineResponse> {
+    const duplicated = await this.routineService.duplicate(id, user.id);
+    return mapRoutineToContract(duplicated);
   }
 
   @Post(':id/sessions')
@@ -113,18 +133,17 @@ export class RoutineController {
     @Param('id') id: string,
     @Body() dto: RoutineSessionRequestDto,
     @CurrentUser() user: CurrentUserData,
-  ) {
-    return await this.routineService.addSession(
-      { ...dto, routineId: id },
-      user.id,
-    );
+  ): Promise<RoutineSession> {
+    const session = await this.routineService.addSession({ ...dto, routineId: id }, user.id);
+    return mapSessionToContract(session);
   }
 
   @Get(':id/sessions')
   async getSessions(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserData,
-  ) {
-    return await this.routineService.getSessions(id, user.id);
+  ): Promise<RoutineSession[]> {
+    const sessions = await this.routineService.getSessions(id, user.id);
+    return mapSessionListToContract(sessions);
   }
 }

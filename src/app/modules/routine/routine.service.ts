@@ -11,6 +11,12 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Like, Repository } from 'typeorm';
 
+type RoutineGlobalStats = {
+  totalTime: number;
+  totalWeight: number;
+  completedSets: number;
+};
+
 @Injectable()
 export class RoutineService {
   constructor(
@@ -108,7 +114,10 @@ export class RoutineService {
 
     return fullRoutine;
   }
-  async findOneWithExercises(id: string, userId: string) {
+  async findOneWithExercises(
+    id: string,
+    userId: string,
+  ): Promise<RoutineEntity | null> {
     return await this.routineRepository.findOne({
       where: { id, userId },
       relations: [
@@ -225,7 +234,7 @@ export class RoutineService {
     const savedRoutine = await this.routineRepository.save(newRoutine);
 
     // 🔥 SOLUCIÓN SIMPLIFICADA - Exactamente como en create y update
-    for (const re of original.routineExercises) {
+    for (const re of original.routineExercises ?? []) {
       const exercise = await this.exerciseRepository.findOne({
         where: { id: re.exercise.id },
       });
@@ -352,14 +361,17 @@ export class RoutineService {
     return this.sessionRepository.save(session);
   }
 
-  async getSessions(routineId: string, userId: string) {
+  async getSessions(
+    routineId: string,
+    userId: string,
+  ): Promise<RoutineSessionEntity[]> {
     return this.sessionRepository.find({
       where: { routine: { id: routineId, userId } },
       order: { createdAt: 'DESC' },
     });
   }
 
-  async getAllSessions(userId: string) {
+  async getAllSessions(userId: string): Promise<RoutineSessionEntity[]> {
     // Optimized: Single query with JOIN instead of 2 separate queries
     return this.sessionRepository
       .createQueryBuilder('session')
@@ -370,7 +382,7 @@ export class RoutineService {
       .getMany();
   }
 
-  async getGlobalStats(userId: string) {
+  async getGlobalStats(userId: string): Promise<RoutineGlobalStats> {
     // Optimized: Single query with SQL aggregation instead of 2 queries + in-memory aggregation
     const stats = await this.sessionRepository
       .createQueryBuilder('session')

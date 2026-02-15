@@ -1,5 +1,4 @@
 import {
-  AuthResponseDto,
   GoogleAuthRequestDto,
   ForgotPasswordRequestDto,
   ForgotPasswordResponseDto,
@@ -8,10 +7,9 @@ import {
   RegisterRequestDto,
   ResetPasswordRequestDto,
   UpdateUserProfileDto,
-  UserResponseDto,
 } from '@app/entity-data-models';
-// Import GoogleLoginDto from frontend-types (interface)
 import type { GoogleLoginDto } from '@app/entity-data-models/dtos/frontend-types';
+import type { AuthResponse, UserResponse } from '@sergiomesasyelamos2000/shared';
 import {
   Body,
   Controller,
@@ -30,50 +28,49 @@ import {
   CurrentUserData,
 } from './decorators/current-user.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import {
+  mapAuthResponseToContract,
+  mapUserToAuthContract,
+} from './mappers/auth-contract.mapper';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
-  // ==================== EMAIL/PASSWORD AUTH ====================
-
   @Post('login')
   @ApiOperation({ summary: 'Login with email and password' })
-  async login(@Body() credentials: LoginRequestDto): Promise<AuthResponseDto> {
-    return this.authService.login(credentials);
+  async login(@Body() credentials: LoginRequestDto): Promise<AuthResponse> {
+    const response = await this.authService.login(credentials);
+    return mapAuthResponseToContract(response);
   }
 
   @Post('register')
   @ApiOperation({ summary: 'Register new user with email and password' })
-  async register(
-    @Body() userData: RegisterRequestDto,
-  ): Promise<AuthResponseDto> {
-    return this.authService.register(userData);
+  async register(@Body() userData: RegisterRequestDto): Promise<AuthResponse> {
+    const response = await this.authService.register(userData);
+    return mapAuthResponseToContract(response);
   }
 
-  // ==================== GOOGLE OAUTH ====================
-
-  @Post('google/login') // Endpoint recomendado
-  async googleLogin(@Body() body: GoogleLoginDto) {
-    return this.authService.googleLogin(body.idToken);
+  @Post('google/login')
+  async googleLogin(@Body() body: GoogleLoginDto): Promise<AuthResponse> {
+    const response = await this.authService.googleLogin(body.idToken);
+    return mapAuthResponseToContract(response);
   }
 
   @Post('google/callback')
   @ApiOperation({ summary: 'Google OAuth callback' })
   async googleCallback(
     @Body() googleData: GoogleAuthRequestDto,
-  ): Promise<AuthResponseDto> {
-    return this.authService.googleAuth(googleData);
+  ): Promise<AuthResponse> {
+    const response = await this.authService.googleAuth(googleData);
+    return mapAuthResponseToContract(response);
   }
-
-  // ==================== APPLE OAUTH ====================
 
   @Get('apple')
   @UseGuards(AuthGuard('apple'))
   @ApiOperation({ summary: 'Initiate Apple OAuth flow' })
   async appleLogin() {
-    // Passport redirects automatically to Apple
     return;
   }
 
@@ -84,14 +81,13 @@ export class AuthController {
     return this.authService.validateOAuthLogin(req.user, 'apple');
   }
 
-  // ==================== TOKEN MANAGEMENT ====================
-
   @Post('refresh')
   @ApiOperation({ summary: 'Refresh access token using refresh token' })
   async refreshToken(
     @Body() dto: RefreshTokenRequestDto,
-  ): Promise<AuthResponseDto> {
-    return this.authService.refreshToken(dto);
+  ): Promise<AuthResponse> {
+    const response = await this.authService.refreshToken(dto);
+    return mapAuthResponseToContract(response);
   }
 
   @Post('forgot-password')
@@ -122,16 +118,15 @@ export class AuthController {
     return { message: 'Logout successful' };
   }
 
-  // ==================== USER PROFILE ====================
-
   @Get('me')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user profile' })
   async getCurrentUser(
     @CurrentUser() user: CurrentUserData,
-  ): Promise<UserResponseDto> {
-    return this.authService.getCurrentUser(user.id);
+  ): Promise<UserResponse> {
+    const currentUser = await this.authService.getCurrentUser(user.id);
+    return mapUserToAuthContract(currentUser);
   }
 
   @Put('users/:userId')
@@ -142,12 +137,12 @@ export class AuthController {
     @Param('userId') userId: string,
     @Body() updates: UpdateUserProfileDto,
     @CurrentUser() user: CurrentUserData,
-  ): Promise<UserResponseDto> {
-    // Ensure user can only update their own profile
+  ): Promise<UserResponse> {
     if (userId !== user.id) {
       throw new Error("Unauthorized: Cannot update another user's profile");
     }
 
-    return this.authService.updateUserProfile(userId, updates);
+    const updatedUser = await this.authService.updateUserProfile(userId, updates);
+    return mapUserToAuthContract(updatedUser);
   }
 }
