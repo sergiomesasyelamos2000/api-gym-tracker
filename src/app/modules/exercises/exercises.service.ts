@@ -167,9 +167,13 @@ export class ExercisesService implements OnModuleInit {
       );
     }
 
-    // Nota: syncWithExerciseDB() se mantiene comentado porque sincroniza 1500+ ejercicios
-    // y toma mucho tiempo. Se puede ejecutar manualmente si es necesario.
-    // await this.syncWithExerciseDB();
+    const exerciseCount = await this.exerciseRepository.count();
+    if (exerciseCount === 0) {
+      this.logger.log('⚠️ Tabla de ejercicios vacía, sincronizando...');
+      await this.syncWithExerciseDB();
+    } else {
+      this.logger.log(`✅ Ejercicios ya cargados (${exerciseCount} registros)`);
+    }
 
     this.logger.log('✅ Verificación de datos completada');
   }
