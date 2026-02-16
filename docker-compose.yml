@@ -5,11 +5,14 @@ services:
     build:
       context: .
       target: development
+      args:
+        NODE_AUTH_TOKEN: ${NODE_AUTH_TOKEN}
     ports:
       - '3000:3000'
     volumes:
       - .:/usr/src/app
       - /usr/src/app/node_modules
+      - ../shared:/usr/src/shared
       - ./credentials:/usr/src/app/credentials
     env_file:
       - .env
@@ -28,6 +31,7 @@ services:
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
       - GOOGLE_APPLICATION_CREDENTIALS=/usr/src/app/credentials/google-credentials.json
+      - NODE_AUTH_TOKEN=${NODE_AUTH_TOKEN}
     command: >
       sh -c "
         echo '⏳ Waiting for PostgreSQL to be ready...' &&

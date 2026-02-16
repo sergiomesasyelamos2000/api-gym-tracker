@@ -46,7 +46,7 @@
     "@nestjs/serve-static": "^5.0.3",
     "@nestjs/swagger": "^11.2.0",
     "@nestjs/typeorm": "^11.0.0",
-    "@sergiomesasyelamos2000/shared": "file:../shared",
+    "@sergiomesasyelamos2000/shared": "1.1.1",
     "@types/bcrypt": "^6.0.0",
     "@types/passport-jwt": "^4.0.1",
     "@types/pdfkit": "^0.17.4",

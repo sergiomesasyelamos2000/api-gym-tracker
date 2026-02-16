@@ -1,4 +1,8 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as brevo from '@getbrevo/brevo';
 
@@ -15,7 +19,7 @@ export class EmailService {
     this.fromEmail =
       this.configService.get<string>('BREVO_FROM_EMAIL')?.trim() || null;
     this.fromName =
-      this.configService.get<string>('BREVO_FROM_NAME') || 'FitTrack App';
+      this.configService.get<string>('BREVO_FROM_NAME') || 'EvoFit App';
 
     this.apiInstance = new brevo.TransactionalEmailsApi();
 

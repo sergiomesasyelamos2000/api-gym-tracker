@@ -7,6 +7,9 @@ RUN apk add --no-cache netcat-openbsd
 
 # Instalar pnpm o usar npm? Usaremos npm por defecto ya que ví package-lock.json
 COPY package*.json ./
+COPY .npmrc ./
+ARG NODE_AUTH_TOKEN
+ENV NODE_AUTH_TOKEN=${NODE_AUTH_TOKEN}
 RUN npm install
 COPY . .
 
