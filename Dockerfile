@@ -25,10 +25,15 @@ RUN npm run build
 FROM node:20-alpine AS production
 ARG NODE_ENV=production
 ENV NODE_ENV=${NODE_ENV}
+ENV HUSKY=0
 WORKDIR /usr/src/app
 COPY --from=build /usr/src/app/dist ./dist
 COPY --from=build /usr/src/app/node_modules ./node_modules
 COPY --from=build /usr/src/app/package*.json ./
+COPY --from=build /usr/src/app/src ./src
+COPY --from=build /usr/src/app/libs ./libs
+COPY --from=build /usr/src/app/typeorm.config.ts ./typeorm.config.ts
+COPY --from=build /usr/src/app/tsconfig.json ./tsconfig.json
 
 EXPOSE 3000
-CMD ["node", "dist/main"]
+CMD ["npm", "run", "start:prod:migrate"]

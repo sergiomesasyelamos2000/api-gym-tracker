@@ -10,13 +10,22 @@ register({
 
 config();
 
+const isProduction = process.env.NODE_ENV === 'production';
+const useSsl =
+  (process.env.DATABASE_SSL || (isProduction ? 'true' : 'false')) === 'true';
+
 export default new DataSource({
   type: 'postgres',
-  host: process.env.DATABASE_HOST || 'localhost',
-  port: parseInt(process.env.DATABASE_PORT || '5432', 10),
-  username: process.env.DATABASE_USER || 'postgres',
-  password: process.env.DATABASE_PASSWORD || 'postgres',
-  database: process.env.DATABASE_NAME || 'gym_db',
+  ...(process.env.DATABASE_URL
+    ? { url: process.env.DATABASE_URL }
+    : {
+        host: process.env.DATABASE_HOST || 'localhost',
+        port: parseInt(process.env.DATABASE_PORT || '5432', 10),
+        username: process.env.DATABASE_USER || 'postgres',
+        password: process.env.DATABASE_PASSWORD || 'postgres',
+        database: process.env.DATABASE_NAME || 'gym_db',
+      }),
+  ssl: useSsl ? { rejectUnauthorized: false } : false,
   entities: ['libs/entity-data-models/src/**/*.entity.ts'], // Direct path to avoid aliases issues in CLI
   migrations: ['src/migrations/*.ts'],
   synchronize: false, // Migrations disable synchronize
