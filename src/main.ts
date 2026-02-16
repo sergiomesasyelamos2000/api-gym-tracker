@@ -4,8 +4,10 @@ import { AppModule } from './app/app.module';
 import 'reflect-metadata';
 import { json, urlencoded, raw } from 'express';
 import * as dotenv from 'dotenv';
+import { setDefaultResultOrder } from 'node:dns';
 
 dotenv.config();
+setDefaultResultOrder('ipv4first');
 
 declare const module: any;
 
