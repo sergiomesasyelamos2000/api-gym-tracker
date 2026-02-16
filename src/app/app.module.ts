@@ -54,47 +54,64 @@ import { ExportService } from './services/export.service';
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        type: 'postgres',
-        host: configService.get<string>('DATABASE_HOST', 'localhost'),
-        port: configService.get<number>('DATABASE_PORT', 5432),
-        username: configService.getOrThrow<string>('DATABASE_USER'),
-        password: configService.getOrThrow<string>('DATABASE_PASSWORD'),
-        database: configService.getOrThrow<string>('DATABASE_NAME'),
-        entities: [
-          RoutineEntity,
-          ExerciseEntity,
-          SetEntity,
-          RoutineExerciseEntity,
-          RoutineSessionEntity,
-          EquipmentEntity,
-          MuscleEntity,
-          ExerciseTypeEntity,
-          UserNutritionProfileEntity,
-          FoodEntryEntity,
-          ShoppingListItemEntity,
-          FavoriteProductEntity,
-          CustomProductEntity,
-          CustomMealEntity,
-          SubscriptionEntity,
-          UserEntity,
-        ],
-        synchronize: configService.get<string>('NODE_ENV') === 'development',
-        // Connection pool configuration
-        extra: {
-          max: 100, // Maximum number of connections in pool (increased from 50)
-          min: 20, // Minimum number of connections in pool (increased from 10)
-          idleTimeoutMillis: 30000, // Close idle connections after 30s
-          connectionTimeoutMillis: 10000, // Timeout for acquiring connection (increased from 5000)
-          acquireTimeoutMillis: 30000, // Timeout for acquiring connection from pool
-        },
-        // Query logging
-        logging:
-          configService.get<string>('NODE_ENV') === 'development'
-            ? ['query', 'error', 'warn']
-            : ['error'],
-        maxQueryExecutionTime: 1000, // Log queries taking > 1s
-      }),
+      useFactory: (configService: ConfigService) => {
+        const isProduction = configService.get<string>('NODE_ENV') === 'production';
+        const databaseUrl = configService.get<string>('DATABASE_URL');
+        const databaseSsl =
+          configService.get<string>('DATABASE_SSL', isProduction ? 'true' : 'false') ===
+          'true';
+
+        const maxConnections = Number(
+          configService.get<string>('DATABASE_POOL_MAX', isProduction ? '10' : '20'),
+        );
+        const minConnections = Number(
+          configService.get<string>('DATABASE_POOL_MIN', isProduction ? '0' : '5'),
+        );
+
+        const connectionOptions = databaseUrl
+          ? { url: databaseUrl }
+          : {
+              host: configService.get<string>('DATABASE_HOST', 'localhost'),
+              port: configService.get<number>('DATABASE_PORT', 5432),
+              username: configService.getOrThrow<string>('DATABASE_USER'),
+              password: configService.getOrThrow<string>('DATABASE_PASSWORD'),
+              database: configService.getOrThrow<string>('DATABASE_NAME'),
+            };
+
+        return {
+          type: 'postgres',
+          ...connectionOptions,
+          ssl: databaseSsl ? { rejectUnauthorized: false } : false,
+          entities: [
+            RoutineEntity,
+            ExerciseEntity,
+            SetEntity,
+            RoutineExerciseEntity,
+            RoutineSessionEntity,
+            EquipmentEntity,
+            MuscleEntity,
+            ExerciseTypeEntity,
+            UserNutritionProfileEntity,
+            FoodEntryEntity,
+            ShoppingListItemEntity,
+            FavoriteProductEntity,
+            CustomProductEntity,
+            CustomMealEntity,
+            SubscriptionEntity,
+            UserEntity,
+          ],
+          synchronize: !isProduction,
+          extra: {
+            max: maxConnections,
+            min: minConnections,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 10000,
+            acquireTimeoutMillis: 30000,
+          },
+          logging: isProduction ? ['error'] : ['query', 'error', 'warn'],
+          maxQueryExecutionTime: 1000,
+        };
+      },
     }),
     ScheduleModule.forRoot(),
     ExercisesModule,
