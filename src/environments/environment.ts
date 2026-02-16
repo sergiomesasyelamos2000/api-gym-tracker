@@ -5,6 +5,14 @@ import * as path from 'path';
 // Cargar .env explícitamente
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
+const getRequiredEnv = (key: string): string => {
+  const value = process.env[key];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${key}`);
+  }
+  return value;
+};
+
 export const ENV = {
   // API Keys
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
@@ -18,7 +26,7 @@ export const ENV = {
   GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL || '',
 
   // JWT
-  JWT_SECRET: process.env.JWT_SECRET || '',
+  JWT_SECRET: getRequiredEnv('JWT_SECRET'),
   JWT_EXPIRATION: process.env.JWT_EXPIRATION || '7d',
 
   // Frontend
@@ -27,9 +35,9 @@ export const ENV = {
   // Database
   DATABASE_HOST: process.env.DATABASE_HOST || 'localhost',
   DATABASE_PORT: parseInt(process.env.DATABASE_PORT || '5432', 10),
-  DATABASE_USER: process.env.DATABASE_USER || 'postgres',
-  DATABASE_PASSWORD: process.env.DATABASE_PASSWORD || 'postgres',
-  DATABASE_NAME: process.env.DATABASE_NAME || 'gym_db',
+  DATABASE_USER: getRequiredEnv('DATABASE_USER'),
+  DATABASE_PASSWORD: getRequiredEnv('DATABASE_PASSWORD'),
+  DATABASE_NAME: getRequiredEnv('DATABASE_NAME'),
 
   // Cloudinary
   CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME || '',

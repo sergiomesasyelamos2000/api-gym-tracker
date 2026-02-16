@@ -56,11 +56,11 @@ import { ExportService } from './services/export.service';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
-        host: configService.get<string>('DATABASE_HOST'),
-        port: configService.get<number>('DATABASE_PORT'),
-        username: configService.get<string>('DATABASE_USER'),
-        password: configService.get<string>('DATABASE_PASSWORD'),
-        database: configService.get<string>('DATABASE_NAME'),
+        host: configService.get<string>('DATABASE_HOST', 'localhost'),
+        port: configService.get<number>('DATABASE_PORT', 5432),
+        username: configService.getOrThrow<string>('DATABASE_USER'),
+        password: configService.getOrThrow<string>('DATABASE_PASSWORD'),
+        database: configService.getOrThrow<string>('DATABASE_NAME'),
         entities: [
           RoutineEntity,
           ExerciseEntity,
