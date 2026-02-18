@@ -12,6 +12,7 @@ import {
   UpdateShoppingListItemDto,
   UpdateUserNutritionProfileDto,
   BarcodeScanDto,
+  RecognizeFoodResponseDto,
 } from '@app/entity-data-models';
 import {
   BadRequestException,
@@ -72,13 +73,14 @@ export class NutritionController {
 
   @Post('photo')
   @UseInterceptors(FileInterceptor('file'))
-  async analyzePhoto(@UploadedFile() file: Express.Request) {
+  async analyzePhoto(
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<RecognizeFoodResponseDto[]> {
     if (!file) {
-      throw new Error('No se recibió ningún archivo');
+      throw new BadRequestException('No se recibió ningún archivo');
     }
-    const items = await this.nutritionService.recognizeFood(file);
-
-    return { items };
+    const item = await this.nutritionService.recognizeFood(file);
+    return Array.isArray(item) ? item : [item];
   }
 
   @Post('barcode')

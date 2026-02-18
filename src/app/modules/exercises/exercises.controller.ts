@@ -24,8 +24,16 @@ export class ExercisesController {
   }
 
   @Get('search')
-  searchByName(@Query('name') name: string) {
-    return this.exercisesService.searchByName(name);
+  search(
+    @Query('name') name?: string,
+    @Query('equipment') equipment?: string,
+    @Query('muscle') muscle?: string,
+  ) {
+    return this.exercisesService.search({
+      name,
+      equipment,
+      muscle,
+    });
   }
 
   @Get('equipment/all')

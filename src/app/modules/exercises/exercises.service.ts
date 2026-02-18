@@ -15,13 +15,15 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { firstValueFrom } from 'rxjs';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 
 const sharp = require('sharp');
 
 interface ExerciseDbItem {
   name: string;
   gifUrl?: string;
+  gif_url?: string;
+  gif?: string;
   videoUrl?: string;
   targetMuscles?: string[];
   bodyParts?: string[];
@@ -35,21 +37,16 @@ interface ExerciseDbItem {
   overview?: string;
   relatedExerciseIds?: string[];
   imageUrl?: string;
+  image?: string;
+  images?: string[];
+  exerciseName?: string;
+  title?: string;
 }
 
-interface BodyPartItem {
-  name: string;
-  imageUrl?: string;
-}
-
-interface EquipmentItem {
-  name: string;
-  imageUrl?: string;
-}
-
-interface ExerciseTypeItem {
-  name: string;
-  imageUrl?: string;
+interface ExerciseSearchParams {
+  name?: string;
+  equipment?: string;
+  muscle?: string;
 }
 
 @Injectable()
@@ -184,12 +181,95 @@ export class ExercisesService implements OnModuleInit {
     return this.exerciseRepository.find();
   }
 
-  async searchByName(name: string): Promise<ExerciseEntity[]> {
-    return this.exerciseRepository
+  async search(params: ExerciseSearchParams): Promise<ExerciseEntity[]> {
+    const query = this.exerciseRepository
       .createQueryBuilder('exercise')
-      .where('LOWER(exercise.name) LIKE LOWER(:name)', { name: `%${name}%` })
-      .orderBy('exercise.name', 'ASC')
-      .getMany();
+      .orderBy('exercise.name', 'ASC');
+
+    const normalizedName = params.name?.trim().toLowerCase();
+    const normalizedEquipment = params.equipment?.trim().toLowerCase();
+    const normalizedMuscle = params.muscle?.trim().toLowerCase();
+
+    if (normalizedName) {
+      query.andWhere('LOWER(exercise.name) LIKE :name', {
+        name: `%${normalizedName}%`,
+      });
+    }
+
+    if (normalizedEquipment) {
+      query.andWhere(
+        new Brackets(qb => {
+          qb.where(
+            `
+              EXISTS (
+                SELECT 1
+                FROM unnest(string_to_array(COALESCE(LOWER(exercise.equipments), ''), ',')) AS equipment_token
+                WHERE btrim(equipment_token) = :equipment
+              )
+            `,
+            { equipment: normalizedEquipment },
+          ).orWhere(
+            `
+              EXISTS (
+                SELECT 1
+                FROM unnest(string_to_array(COALESCE(LOWER(exercise.equipments), ''), ',')) AS equipment_token
+                WHERE btrim(equipment_token) LIKE :equipmentPrefix
+              )
+            `,
+            { equipmentPrefix: `${normalizedEquipment} %` },
+          );
+        }),
+      );
+    }
+
+    if (normalizedMuscle) {
+      query.andWhere(
+        new Brackets(qb => {
+          qb.where(
+            `
+              EXISTS (
+                SELECT 1
+                FROM unnest(string_to_array(COALESCE(LOWER(exercise.targetMuscles), ''), ',')) AS muscle_token
+                WHERE btrim(muscle_token) = :muscle
+              )
+            `,
+            { muscle: normalizedMuscle },
+          )
+            .orWhere(
+              `
+                EXISTS (
+                  SELECT 1
+                  FROM unnest(string_to_array(COALESCE(LOWER(exercise.targetMuscles), ''), ',')) AS muscle_token
+                  WHERE btrim(muscle_token) LIKE :musclePrefix
+                )
+              `,
+              { musclePrefix: `${normalizedMuscle} %` },
+            )
+            .orWhere(
+              `
+                EXISTS (
+                  SELECT 1
+                  FROM unnest(string_to_array(COALESCE(LOWER(exercise.bodyParts), ''), ',')) AS body_part_token
+                  WHERE btrim(body_part_token) = :muscle
+                )
+              `,
+              { muscle: normalizedMuscle },
+            )
+            .orWhere(
+              `
+                EXISTS (
+                  SELECT 1
+                  FROM unnest(string_to_array(COALESCE(LOWER(exercise.bodyParts), ''), ',')) AS body_part_token
+                  WHERE btrim(body_part_token) LIKE :musclePrefix
+                )
+              `,
+              { musclePrefix: `${normalizedMuscle} %` },
+            );
+        }),
+      );
+    }
+
+    return query.getMany();
   }
 
   async findAllEquipment(): Promise<EquipmentEntity[]> {
@@ -481,11 +561,13 @@ export class ExercisesService implements OnModuleInit {
     entity.id = uuidv4();
 
     // 🌍 TRADUCIR los campos importantes
-    entity.name = await this.translateToSpanish(data.name);
+    const rawName = this.resolveFirstString(data, ['name', 'exerciseName', 'title']);
+    entity.name = await this.translateToSpanish(rawName || 'Ejercicio');
 
     // 📹 GIF URL - La API gratuita devuelve gifUrl directamente
-    if (data.gifUrl) {
-      entity.giftUrl = data.gifUrl;
+    const gifUrl = this.resolveGifUrl(data);
+    if (gifUrl) {
+      entity.giftUrl = gifUrl;
     }
 
     // 🎥 Video URL
@@ -518,16 +600,10 @@ export class ExercisesService implements OnModuleInit {
     entity.relatedExerciseIds = data.relatedExerciseIds || [];
 
     // 🖼️ Procesar imagen - La API incluye imageUrl directamente
-    if (data.imageUrl) {
+    const imageUrl = this.resolveImageUrl(data);
+    if (imageUrl) {
+      const fullImageUrl = this.buildAbsoluteImageUrl(imageUrl);
       try {
-        // La imageUrl puede ser una URL completa o relativa
-        let fullImageUrl = data.imageUrl;
-
-        // Si es una URL relativa, construir la URL completa
-        if (!fullImageUrl.startsWith('http')) {
-          fullImageUrl = `https://static.exercisedb.dev/images/${fullImageUrl}`;
-        }
-
         this.logger.debug(`Descargando imagen: ${fullImageUrl}`);
 
         const imageBuffer = await this.downloadAndConvertImage(fullImageUrl);
@@ -537,10 +613,13 @@ export class ExercisesService implements OnModuleInit {
           `No se pudo procesar imagen para ${data.name}: ${error.message}`,
         );
 
+        // Mantener URL remota para no dejar imageUrl vacío
+        entity.imageUrl = fullImageUrl;
+
         // Si falla la imagen, intentar usar el GIF como backup
-        if (data.gifUrl) {
+        if (gifUrl) {
           try {
-            const gifBuffer = await this.downloadAndConvertImage(data.gifUrl);
+            const gifBuffer = await this.downloadAndConvertImage(gifUrl);
             entity.imageUrl = gifBuffer.toString('base64');
             this.logger.debug(
               `Usando GIF como imagen de respaldo para ${data.name}`,
@@ -549,26 +628,69 @@ export class ExercisesService implements OnModuleInit {
             this.logger.warn(
               `Tampoco se pudo usar el GIF: ${gifError.message}`,
             );
-            entity.imageUrl = undefined;
           }
-        } else {
-          entity.imageUrl = undefined;
         }
       }
-    } else if (data.gifUrl) {
+    } else if (gifUrl) {
       // Si no hay imageUrl, usar el GIF directamente
       try {
-        const gifBuffer = await this.downloadAndConvertImage(data.gifUrl);
+        const gifBuffer = await this.downloadAndConvertImage(gifUrl);
         entity.imageUrl = gifBuffer.toString('base64');
       } catch (error) {
         this.logger.warn(
           `No se pudo procesar GIF para ${data.name}: ${error.message}`,
         );
-        entity.imageUrl = undefined;
+        // Mantener URL remota para no perder imagen en cliente
+        entity.imageUrl = gifUrl;
       }
     }
 
     return entity;
+  }
+
+  private resolveFirstString(
+    data: ExerciseDbItem,
+    keys: string[],
+  ): string | undefined {
+    const record = data as unknown as Record<string, unknown>;
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    return undefined;
+  }
+
+  private resolveGifUrl(data: ExerciseDbItem): string | undefined {
+    const gif = this.resolveFirstString(data, ['gifUrl', 'gif_url', 'gif']);
+    if (!gif) return undefined;
+    return this.buildAbsoluteImageUrl(gif);
+  }
+
+  private resolveImageUrl(data: ExerciseDbItem): string | undefined {
+    const directImage = this.resolveFirstString(data, ['imageUrl', 'image']);
+    if (directImage) return directImage;
+
+    const images = (data as unknown as Record<string, unknown>).images;
+    if (Array.isArray(images)) {
+      const firstImage = images.find(
+        (item): item is string =>
+          typeof item === 'string' && item.trim().length > 0,
+      );
+      if (firstImage) return firstImage;
+    }
+
+    return undefined;
+  }
+
+  private buildAbsoluteImageUrl(url: string): string {
+    if (!url || url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+
+    const cleanUrl = url.replace(/^\/+/, '');
+    return `https://static.exercisedb.dev/images/${cleanUrl}`;
   }
 
   private async downloadAndConvertImage(imageUrl: string): Promise<Buffer> {
@@ -619,7 +741,7 @@ export class ExercisesService implements OnModuleInit {
             });
             return this.capitalizeFirst(translation);
           } catch (error) {
-            return this.capitalizeFirst(text);
+            return this.translateByDictionaryFallback(text);
           }
         }),
       );
@@ -627,7 +749,7 @@ export class ExercisesService implements OnModuleInit {
       return translations;
     } catch (error) {
       this.logger.warn(`Error traduciendo array: ${error.message}`);
-      return texts.map(t => this.capitalizeFirst(t));
+      return texts.map(t => this.translateByDictionaryFallback(t));
     }
   }
 
@@ -1133,8 +1255,35 @@ export class ExercisesService implements OnModuleInit {
       return this.normalizeText(translation);
     } catch (error) {
       this.logger.warn(`Error traduciendo "${text}": ${error.message}`);
-      return this.normalizeText(text);
+      return this.translateByDictionaryFallback(text);
     }
+  }
+
+  /**
+   * Fallback cuando Google Translate falla:
+   * traduce palabra por palabra usando el diccionario personalizado.
+   */
+  private translateByDictionaryFallback(text: string): string {
+    if (!text) return text;
+
+    const translated = text.replace(/[A-Za-z][A-Za-z\s'-]*/g, segment => {
+      const value = segment.toLowerCase().trim();
+      if (!value) return segment;
+      if (this.customTranslations[value]) {
+        return this.customTranslations[value];
+      }
+
+      const parts = value.split(/\s+/).map(part => {
+        if (this.customTranslations[part]) {
+          return this.customTranslations[part];
+        }
+        return part;
+      });
+
+      return parts.join(' ');
+    });
+
+    return this.capitalizeFirst(translated);
   }
 
   /**
