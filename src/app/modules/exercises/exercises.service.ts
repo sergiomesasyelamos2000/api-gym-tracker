@@ -8,6 +8,7 @@ import {
 import { v2 as translate } from '@google-cloud/translate';
 import { HttpService } from '@nestjs/axios';
 import {
+  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
@@ -178,12 +179,35 @@ export class ExercisesService implements OnModuleInit {
   // ==================== MÉTODOS PRINCIPALES ====================
 
   async findAll(): Promise<ExerciseEntity[]> {
-    return this.exerciseRepository.find();
+    return this.exerciseRepository
+      .createQueryBuilder('exercise')
+      .select([
+        'exercise.id',
+        'exercise.name',
+        'exercise.imageUrl',
+        'exercise.giftUrl',
+        'exercise.equipments',
+        'exercise.bodyParts',
+        'exercise.targetMuscles',
+        'exercise.secondaryMuscles',
+      ])
+      .orderBy('exercise.name', 'ASC')
+      .getMany();
   }
 
   async search(params: ExerciseSearchParams): Promise<ExerciseEntity[]> {
     const query = this.exerciseRepository
       .createQueryBuilder('exercise')
+      .select([
+        'exercise.id',
+        'exercise.name',
+        'exercise.imageUrl',
+        'exercise.giftUrl',
+        'exercise.equipments',
+        'exercise.bodyParts',
+        'exercise.targetMuscles',
+        'exercise.secondaryMuscles',
+      ])
       .orderBy('exercise.name', 'ASC');
 
     const normalizedName = params.name?.trim().toLowerCase();
@@ -287,21 +311,38 @@ export class ExercisesService implements OnModuleInit {
   async createCustom(dto: CreateExerciseDto & { imageBase64?: string }) {
     const { v4: uuidv4 } = await import('uuid');
 
+    const equipmentId = dto.equipment?.trim();
+    const primaryMuscleId = dto.primaryMuscle?.trim();
+    const typeId = dto.type?.trim();
+
+    const isUuid = (value: string) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        value,
+      );
+
+    if (!equipmentId || !isUuid(equipmentId)) {
+      throw new BadRequestException('equipment debe ser un UUID válido');
+    }
+
+    if (!primaryMuscleId || !isUuid(primaryMuscleId)) {
+      throw new BadRequestException('primaryMuscle debe ser un UUID válido');
+    }
+
     // Validar equipamiento
     const equipment = await this.equipmentRepository.findOne({
-      where: { id: dto.equipment },
+      where: { id: equipmentId },
     });
     if (!equipment) {
-      throw new NotFoundException(`Equipo no encontrado: ${dto.equipment}`);
+      throw new NotFoundException(`Equipo no encontrado: ${equipmentId}`);
     }
 
     // Validar músculo principal
     const primaryMuscle = await this.muscleRepository.findOne({
-      where: { id: dto.primaryMuscle },
+      where: { id: primaryMuscleId },
     });
     if (!primaryMuscle) {
       throw new NotFoundException(
-        `Músculo no encontrado: ${dto.primaryMuscle}`,
+        `Músculo no encontrado: ${primaryMuscleId}`,
       );
     }
 
@@ -312,14 +353,20 @@ export class ExercisesService implements OnModuleInit {
       secondaryMuscles = found.map(m => m.name);
     }
 
-    // Validar tipo de ejercicio
-    const exerciseType = await this.exerciseTypeRepository.findOne({
-      where: { id: dto.type },
-    });
-    if (!exerciseType) {
-      throw new NotFoundException(
-        `Tipo de ejercicio no encontrado: ${dto.type}`,
-      );
+    // Validar tipo de ejercicio (opcional)
+    let exerciseType: ExerciseTypeEntity | null = null;
+    if (typeId) {
+      if (!isUuid(typeId)) {
+        throw new BadRequestException('type debe ser un UUID válido');
+      }
+
+      exerciseType = await this.exerciseTypeRepository.findOne({
+        where: { id: typeId },
+      });
+
+      if (!exerciseType) {
+        throw new NotFoundException(`Tipo de ejercicio no encontrado: ${typeId}`);
+      }
     }
 
     // Crear ejercicio
@@ -329,7 +376,7 @@ export class ExercisesService implements OnModuleInit {
       equipments: [equipment.name],
       targetMuscles: [primaryMuscle.name],
       secondaryMuscles,
-      exerciseType: exerciseType.name,
+      exerciseType: exerciseType?.name,
       bodyParts: [primaryMuscle.name],
       instructions: [],
       giftUrl: undefined,

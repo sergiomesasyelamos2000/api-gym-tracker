@@ -1,5 +1,6 @@
 import { ExerciseNote } from './shared-types';
 import { SetRequestDto } from './set.model';
+import { IsArray, IsOptional, IsString } from 'class-validator';
 
 export interface ExerciseRequestDto {
   id: string;
@@ -65,10 +66,25 @@ export class ExerciseTypeDto {
 }
 
 export class CreateExerciseDto {
+  @IsString()
   name: string;
+
+  @IsString()
   equipment: string;
+
+  @IsString()
   primaryMuscle: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   otherMuscles?: string[];
+
+  @IsOptional()
+  @IsString()
   type?: string;
+
+  @IsOptional()
+  @IsString()
   imageBase64?: string;
 }

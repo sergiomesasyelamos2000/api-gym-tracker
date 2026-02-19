@@ -24,6 +24,8 @@ export class ExercisesController {
   }
 
   @Get('search')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(120) // 2 minutes
   search(
     @Query('name') name?: string,
     @Query('equipment') equipment?: string,
