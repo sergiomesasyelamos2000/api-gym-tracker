@@ -94,6 +94,8 @@ export class NutritionController {
     @Query('q') searchTerm: string,
     @Query('page') page: string = '1',
     @Query('pageSize') pageSize: string = '20',
+    @Query('overlay') overlay: string = '1',
+    @Query('brand') brand: string = '',
   ) {
     try {
       if (!searchTerm || searchTerm.trim().length === 0) {
@@ -105,11 +107,14 @@ export class NutritionController {
 
       const pageNum = parseInt(page) || 1;
       const pageSizeNum = parseInt(pageSize) || 20;
+      const includeOverlay = !(overlay === '0' || overlay === 'false');
 
       const result = await this.productService.searchProductsByName(
         searchTerm.trim(),
         pageNum,
         pageSizeNum,
+        includeOverlay,
+        brand?.trim() || undefined,
       );
 
       return result;
@@ -126,6 +131,7 @@ export class NutritionController {
   async getAllProducts(
     @Query('page') page: string = '1',
     @Query('pageSize') pageSize: string = '100',
+    @Query('brand') brand: string = '',
   ) {
     try {
       const pageNum = parseInt(page) || 1;
@@ -134,6 +140,7 @@ export class NutritionController {
       const result = await this.productService.getAllProducts(
         pageNum,
         pageSizeNum,
+        brand?.trim() || undefined,
       );
 
       return result;
