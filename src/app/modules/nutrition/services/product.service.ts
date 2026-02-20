@@ -20,6 +20,13 @@ import NUTRIENT_LABELS_ES from '../../../utils/nutrients-labels';
 
 @Injectable()
 export class ProductService {
+  private readonly searchCache = new Map<
+    string,
+    { expiresAt: number; value: { products: MappedProduct[]; total: number } }
+  >();
+  private readonly SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
+  private readonly OFF_TIMEOUT_MS = 3000;
+
   constructor(
     private readonly httpService: HttpService,
     @InjectRepository(FavoriteProductEntity)
@@ -138,7 +145,17 @@ export class ProductService {
     pageSize: number = 20,
   ): Promise<{ products: MappedProduct[]; total: number }> {
     try {
-      // Marcas de supermercados españoles para búsqueda prioritaria
+      const normalizedSearch = searchTerm.trim().toLowerCase();
+      if (!normalizedSearch) {
+        return { products: [], total: 0 };
+      }
+
+      const cacheKey = `${normalizedSearch}:${page}:${pageSize}`;
+      const cached = this.searchCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.value;
+      }
+
       const spanishBrands = [
         'hacendado',
         'dia',
@@ -150,90 +167,28 @@ export class ProductService {
         'mercadona',
       ];
 
-      // Verificar si el término de búsqueda es una marca específica
-      const isSpanishBrand = spanishBrands.some(brand =>
-        searchTerm.toLowerCase().includes(brand),
+      const response = await lastValueFrom(
+        this.httpService.get(
+          `https://es.openfoodfacts.org/cgi/search.pl?` +
+            `search_terms=${encodeURIComponent(normalizedSearch)}&` +
+            `search_simple=1&` +
+            `action=process&` +
+            `json=1&` +
+            `page=${page}&` +
+            `page_size=${pageSize * 2}&` +
+            `sort_by=unique_scans_n&` +
+            `fields=product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code`,
+          {
+            headers: {
+              'User-Agent': 'GymTrackerApp/1.0',
+            },
+            timeout: this.OFF_TIMEOUT_MS,
+          },
+        ),
       );
 
-      let allProducts: OpenFoodFactsProduct[] = [];
-      const productCodes = new Set<string>(); // Para evitar duplicados
-
-      // Estrategia 1: Búsqueda general sin restricción de país (más resultados)
-      try {
-        const generalResponse = await lastValueFrom(
-          this.httpService.get(
-            `https://es.openfoodfacts.org/cgi/search.pl?` +
-              `search_terms=${encodeURIComponent(searchTerm)}&` +
-              `search_simple=1&` +
-              `action=process&` +
-              `json=1&` +
-              `page=${page}&` +
-              `page_size=${pageSize * 2}&` +
-              `sort_by=unique_scans_n&` +
-              `fields=product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code`,
-            {
-              headers: {
-                'User-Agent': 'GymTrackerApp/1.0',
-              },
-            },
-          ),
-        );
-
-        const generalProducts =
-          (generalResponse.data.products as OpenFoodFactsProduct[]) || [];
-        generalProducts.forEach((product: OpenFoodFactsProduct) => {
-          if (!productCodes.has(product.code)) {
-            allProducts.push(product);
-            productCodes.add(product.code);
-          }
-        });
-      } catch (error) {}
-
-      // Estrategia 2: Si es una marca española o hay pocos resultados, buscar específicamente por marca
-      if (isSpanishBrand || allProducts.length < 10) {
-        for (const brand of spanishBrands) {
-          if (
-            searchTerm.toLowerCase().includes(brand) ||
-            allProducts.length < 5
-          ) {
-            try {
-              const brandResponse = await lastValueFrom(
-                this.httpService.get(
-                  `https://es.openfoodfacts.org/cgi/search.pl?` +
-                    `search_terms=${encodeURIComponent(searchTerm)}&` +
-                    `tagtype_0=brands&` +
-                    `tag_contains_0=contains&` +
-                    `tag_0=${brand}&` +
-                    `action=process&` +
-                    `json=1&` +
-                    `page=1&` +
-                    `page_size=10&` +
-                    `sort_by=unique_scans_n&` +
-                    `fields=product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code`,
-                  {
-                    headers: {
-                      'User-Agent': 'GymTrackerApp/1.0',
-                    },
-                  },
-                ),
-              );
-
-              const brandProducts =
-                (brandResponse.data.products as OpenFoodFactsProduct[]) || [];
-              brandProducts.forEach((product: OpenFoodFactsProduct) => {
-                if (!productCodes.has(product.code)) {
-                  allProducts.push(product);
-                  productCodes.add(product.code);
-                }
-              });
-            } catch (error) {
-              console.log(`Error buscando marca ${brand}:`, error.message);
-            }
-
-            if (allProducts.length >= pageSize) break;
-          }
-        }
-      }
+      const allProducts =
+        (response.data.products as OpenFoodFactsProduct[]) || [];
 
       // Filtrar y mapear productos
       const mappedProducts = allProducts
@@ -283,6 +238,16 @@ export class ProductService {
           }),
         )
         .sort((a: MappedProduct, b: MappedProduct) => {
+          const aName = a.name.toLowerCase();
+          const bName = b.name.toLowerCase();
+          const aStarts = aName.startsWith(normalizedSearch);
+          const bStarts = bName.startsWith(normalizedSearch);
+          if (aStarts !== bStarts) return aStarts ? -1 : 1;
+
+          const aIncludes = aName.includes(normalizedSearch);
+          const bIncludes = bName.includes(normalizedSearch);
+          if (aIncludes !== bIncludes) return aIncludes ? -1 : 1;
+
           const aIsSpanish = spanishBrands.some(brand =>
             a.brand?.toLowerCase().includes(brand),
           );
@@ -296,10 +261,16 @@ export class ProductService {
         })
         .slice(0, pageSize);
 
-      return {
+      const result = {
         products: mappedProducts,
         total: mappedProducts.length,
       };
+      this.searchCache.set(cacheKey, {
+        expiresAt: Date.now() + this.SEARCH_CACHE_TTL_MS,
+        value: result,
+      });
+
+      return result;
     } catch (error) {
       console.error('Error buscando productos por nombre:', error);
       return {
