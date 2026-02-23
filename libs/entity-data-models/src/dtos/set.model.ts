@@ -3,6 +3,7 @@ export interface SetRequestDto {
   order: number;
   weight: number;
   reps: number;
+  setType?: 'warmup' | 'normal' | 'failed' | 'drop';
   repsMin?: number;
   repsMax?: number;
   completed?: boolean;

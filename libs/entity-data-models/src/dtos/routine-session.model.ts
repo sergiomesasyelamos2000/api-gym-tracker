@@ -26,6 +26,7 @@ export class RoutineSessionRequestDto {
       reps: number;
       completed: boolean;
       isRecord?: boolean;
+      setType?: 'warmup' | 'normal' | 'failed' | 'drop';
     }[];
   }[];
 }

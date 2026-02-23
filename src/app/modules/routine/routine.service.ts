@@ -5,6 +5,7 @@ import {
   RoutineRequestDto,
   RoutineSessionEntity,
   RoutineSessionRequestDto,
+  SetType,
   SetEntity,
 } from '@app/entity-data-models';
 import { Injectable } from '@nestjs/common';
@@ -76,6 +77,7 @@ export class RoutineService {
               reps: set.reps,
               repsMin: set.repsMin,
               repsMax: set.repsMax,
+              setType: (set.setType as SetType | undefined) || SetType.NORMAL,
               completed: set.completed ?? false,
               weightUnit: set.weightUnit || 'kg',
               repsType: set.repsType || 'reps',
@@ -148,7 +150,34 @@ export class RoutineService {
     });
     if (!routine) throw new Error(`Routine with id ${id} not found`);
 
-    await this.routineExerciseRepository.delete({ routine: { id } });
+    // Remove previous routine_exercises and their sets explicitly by FK column.
+    // Using relation criteria in delete can be unreliable depending on TypeORM translation.
+    const existingRoutineExercises = await this.routineExerciseRepository.find({
+      where: { routine: { id } },
+      select: ['id'],
+    });
+
+    const existingRoutineExerciseIds = existingRoutineExercises
+      .map(re => re.id)
+      .filter((value): value is string => typeof value === 'string');
+
+    if (existingRoutineExerciseIds.length > 0) {
+      await this.setRepository
+        .createQueryBuilder()
+        .delete()
+        .from(SetEntity)
+        .where(`"routineExerciseId" IN (:...ids)`, {
+          ids: existingRoutineExerciseIds,
+        })
+        .execute();
+    }
+
+    await this.routineExerciseRepository
+      .createQueryBuilder()
+      .delete()
+      .from(RoutineExerciseEntity)
+      .where(`"routineId" = :routineId`, { routineId: id })
+      .execute();
 
     const newRoutineExercises = routineRequestDto.exercises.map(
       async (exerciseDto, index) => {
@@ -183,6 +212,7 @@ export class RoutineService {
               reps: set.reps,
               repsMin: set.repsMin,
               repsMax: set.repsMax,
+              setType: (set.setType as SetType | undefined) || SetType.NORMAL,
               completed: set.completed ?? false,
               weightUnit: set.weightUnit || 'kg',
               repsType: set.repsType || 'reps',
@@ -268,6 +298,7 @@ export class RoutineService {
             reps: set.reps,
             repsMin: set.repsMin,
             repsMax: set.repsMax,
+            setType: (set.setType as SetType | undefined) || SetType.NORMAL,
             completed: false,
             weightUnit: set.weightUnit || 'kg',
             repsType: set.repsType || 'reps',

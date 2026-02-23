@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { RoutineExerciseEntity } from './routine-exercise.entity';
-import { WeightUnit, RepsType } from '../dtos/shared-types';
+import { WeightUnit, RepsType, SetType } from '../dtos/shared-types';
 
 @Entity('sets')
 export class SetEntity {
@@ -36,6 +36,9 @@ export class SetEntity {
 
   @Column({ type: 'int', nullable: true })
   repsMax?: number;
+
+  @Column({ type: 'varchar', default: SetType.NORMAL })
+  setType!: SetType;
 
   @Column({ type: 'boolean', default: false })
   completed?: boolean;

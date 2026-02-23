@@ -28,6 +28,13 @@ export enum RepsType {
   RANGE = 'range',
 }
 
+export enum SetType {
+  WARMUP = 'warmup',
+  NORMAL = 'normal',
+  FAILED = 'failed',
+  DROP = 'drop',
+}
+
 export interface ExerciseNote {
   id: string;
   text: string;
