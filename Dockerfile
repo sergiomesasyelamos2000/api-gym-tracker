@@ -10,7 +10,9 @@ COPY package*.json ./
 COPY .npmrc ./
 ARG NODE_AUTH_TOKEN
 ENV NODE_AUTH_TOKEN=${NODE_AUTH_TOKEN}
-RUN npm install
+# NOTE: package-lock.json may contain local links (e.g. ../shared) that do not exist in CI.
+# Force registry resolution in container builds.
+RUN npm install --no-package-lock
 COPY . .
 
 # Development stage
