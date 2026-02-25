@@ -8,7 +8,7 @@ import {
   CustomMealEntity,
 } from '@app/entity-data-models';
 import { SubscriptionService } from './subscription.service';
-import { StripeService } from './stripe.service';
+import { LemonSqueezyService } from './lemon-squeezy.service';
 import { SubscriptionController } from './subscription.controller';
 import { SubscriptionGuard } from './guards/subscription.guard';
 import { AuthModule } from '../auth/auth.module';
@@ -25,7 +25,7 @@ import { AuthModule } from '../auth/auth.module';
     AuthModule, // For JwtAuthGuard and CurrentUser decorator
   ],
   controllers: [SubscriptionController],
-  providers: [SubscriptionService, StripeService, SubscriptionGuard],
+  providers: [SubscriptionService, LemonSqueezyService, SubscriptionGuard],
   exports: [SubscriptionService, SubscriptionGuard], // Export to use in other modules
 })
 export class SubscriptionModule {}

@@ -21,7 +21,7 @@ import {
   CustomerPortalResponseDto,
 } from '@app/entity-data-models';
 import { SubscriptionService } from './subscription.service';
-import { StripeService } from './stripe.service';
+import { LemonSqueezyService } from './lemon-squeezy.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   CurrentUser,
@@ -34,7 +34,7 @@ import { Request } from 'express';
 export class SubscriptionController {
   constructor(
     private subscriptionService: SubscriptionService,
-    private stripeService: StripeService,
+    private lemonSqueezyService: LemonSqueezyService,
   ) {}
 
   // ==================== USER ENDPOINTS ====================
@@ -52,7 +52,7 @@ export class SubscriptionController {
   @Post('checkout')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Create Stripe checkout session' })
+  @ApiOperation({ summary: 'Create Lemon Squeezy checkout session' })
   async createCheckoutSession(
     @CurrentUser() user: CurrentUserData,
     @Body() dto: CreateCheckoutSessionRequestDto,
@@ -100,7 +100,7 @@ export class SubscriptionController {
   @Get('customer-portal')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get Stripe Customer Portal URL' })
+  @ApiOperation({ summary: 'Get Lemon Squeezy customer portal URL' })
   async getCustomerPortal(
     @CurrentUser() user: CurrentUserData,
   ): Promise<CustomerPortalResponseDto> {
@@ -110,13 +110,13 @@ export class SubscriptionController {
   // ==================== WEBHOOK ENDPOINT ====================
 
   @Post('webhook')
-  @ApiOperation({ summary: 'Stripe webhook handler' })
+  @ApiOperation({ summary: 'Lemon Squeezy webhook handler' })
   async handleWebhook(
     @Req() req: RawBodyRequest<Request>,
-    @Headers('stripe-signature') signature: string,
+    @Headers('x-signature') signature: string,
   ): Promise<{ received: boolean }> {
     if (!signature) {
-      throw new BadRequestException('Missing stripe-signature header');
+      throw new BadRequestException('Missing x-signature header');
     }
 
     if (!req.rawBody) {
@@ -124,7 +124,7 @@ export class SubscriptionController {
     }
 
     try {
-      const event = this.stripeService.constructWebhookEvent(
+      const event = this.lemonSqueezyService.constructWebhookEvent(
         req.rawBody,
         signature,
       );
