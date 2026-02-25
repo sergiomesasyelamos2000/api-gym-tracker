@@ -73,12 +73,7 @@ export class SubscriptionController {
     @CurrentUser() user: CurrentUserData,
     @Body() dto: VerifyPaymentRequestDto,
   ): Promise<SubscriptionResponseDto> {
-    return this.subscriptionService.verifyPayment(
-      dto.sessionId,
-      user.id,
-      user.email,
-      dto.planId,
-    );
+    return this.subscriptionService.verifyPayment(dto.sessionId, user.id);
   }
 
   @Put('cancel')

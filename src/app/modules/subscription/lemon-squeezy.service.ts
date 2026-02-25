@@ -100,47 +100,6 @@ export class LemonSqueezyService {
     return response?.data || {};
   }
 
-  async getCheckout(checkoutId: string): Promise<Record<string, unknown>> {
-    const response = await this.request(`/checkouts/${checkoutId}`);
-    return response?.data || {};
-  }
-
-  async listOrders(
-    pageNumber: number = 1,
-    pageSize: number = 100,
-  ): Promise<Array<Record<string, unknown>>> {
-    const response = await this.request(
-      `/orders?page[number]=${pageNumber}&page[size]=${pageSize}`,
-    );
-    return Array.isArray(response?.data) ? response.data : [];
-  }
-
-  async listOrdersByUserEmail(
-    userEmail: string,
-    pageNumber: number = 1,
-    pageSize: number = 100,
-  ): Promise<Array<Record<string, unknown>>> {
-    const encodedEmail = encodeURIComponent(userEmail);
-    const response = await this.request(
-      `/orders?filter[user_email]=${encodedEmail}&page[number]=${pageNumber}&page[size]=${pageSize}`,
-    );
-    return Array.isArray(response?.data) ? response.data : [];
-  }
-
-  async listSubscriptionsByUserEmail(
-    userEmail: string,
-    status: string = 'active',
-    pageNumber: number = 1,
-    pageSize: number = 50,
-  ): Promise<Array<Record<string, unknown>>> {
-    const encodedEmail = encodeURIComponent(userEmail);
-    const encodedStatus = encodeURIComponent(status);
-    const response = await this.request(
-      `/subscriptions?filter[user_email]=${encodedEmail}&filter[status]=${encodedStatus}&page[number]=${pageNumber}&page[size]=${pageSize}`,
-    );
-    return Array.isArray(response?.data) ? response.data : [];
-  }
-
   async getSubscription(subscriptionId: string): Promise<Record<string, unknown>> {
     const response = await this.request(`/subscriptions/${subscriptionId}`);
     return response?.data || {};

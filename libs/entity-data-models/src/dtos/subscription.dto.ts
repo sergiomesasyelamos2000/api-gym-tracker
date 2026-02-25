@@ -21,10 +21,6 @@ export class CreateCheckoutSessionRequestDto {
 export class VerifyPaymentRequestDto {
   @IsString()
   sessionId!: string;
-
-  @IsOptional()
-  @IsEnum(SubscriptionPlan)
-  planId?: SubscriptionPlan;
 }
 
 export class CancelSubscriptionRequestDto {
@@ -41,8 +37,8 @@ export class CancelSubscriptionRequestDto {
 export class SubscriptionResponseDto {
   id!: string;
   userId!: string;
-  lemonCustomerId?: string;
-  lemonSubscriptionId?: string;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
   plan!: SubscriptionPlan;
   status!: SubscriptionStatus;
   currentPeriodStart?: Date;
