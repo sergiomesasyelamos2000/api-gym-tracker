@@ -19,7 +19,7 @@ async function bootstrap() {
     .map((origin) => origin.trim())
     .filter(Boolean);
 
-  // ✅ Raw body for Lemon Squeezy webhook (must be BEFORE json middleware)
+  // ✅ Raw body for Stripe webhook (must be BEFORE json middleware)
   app.use('/api/subscription/webhook', raw({ type: 'application/json' }));
 
   // ✅ Aumentar el límite de tamaño del payload

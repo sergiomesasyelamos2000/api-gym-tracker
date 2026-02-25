@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -21,8 +22,9 @@ import {
   CustomProductEntity,
   CustomMealEntity,
 } from '@app/entity-data-models';
-import { LemonSqueezyService } from './lemon-squeezy.service';
+import { StripeService } from './stripe.service';
 import { ConfigService } from '@nestjs/config';
+import Stripe from 'stripe';
 
 @Injectable()
 export class SubscriptionService {
@@ -37,7 +39,7 @@ export class SubscriptionService {
     private customProductRepository: Repository<CustomProductEntity>,
     @InjectRepository(CustomMealEntity)
     private customMealRepository: Repository<CustomMealEntity>,
-    private lemonSqueezyService: LemonSqueezyService,
+    private stripeService: StripeService,
     private configService: ConfigService,
   ) {}
 
@@ -67,7 +69,7 @@ export class SubscriptionService {
   }
 
   /**
-   * Creates a Lemon Squeezy checkout session
+   * Creates a Stripe checkout session
    */
   async createCheckoutSession(
     userId: string,
@@ -77,27 +79,40 @@ export class SubscriptionService {
   ): Promise<CheckoutSessionResponseDto> {
     this.logger.log(`Creating checkout session for user: ${userId}, plan: ${dto.planId}`);
 
-    // Ensure subscription row exists
-    await this.getOrCreateSubscription(userId);
+    // Get or create subscription record
+    let subscription = await this.getOrCreateSubscription(userId);
 
-    // Get variant ID based on plan
-    const variantId = this.getVariantIdForPlan(dto.planId);
+    // Create or retrieve Stripe customer
+    if (!subscription.stripeCustomerId) {
+      const customer = await this.stripeService.createCustomer(email, name, {
+        userId,
+      });
+      subscription.stripeCustomerId = customer.id;
+      await this.subscriptionRepository.save(subscription);
+    }
+
+    // Get price ID based on plan
+    const priceId = this.getPriceIdForPlan(dto.planId);
 
     // Create checkout session
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:8081';
-    const successUrl = dto.successUrl || `${frontendUrl}/subscription/success`;
-    const checkout = await this.lemonSqueezyService.createCheckoutSession({
-      variantId,
-      userId,
-      planId: dto.planId,
-      email,
-      name,
+    const successUrl = dto.successUrl || `${frontendUrl}/subscription/success?session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = dto.cancelUrl || `${frontendUrl}/subscription/cancel`;
+
+    const session = await this.stripeService.createCheckoutSession(
+      subscription.stripeCustomerId!,
+      priceId,
+      {
+        userId,
+        planId: dto.planId,
+      },
       successUrl,
-    });
+      cancelUrl,
+    );
 
     return {
-      sessionId: checkout.id,
-      checkoutUrl: checkout.url,
+      sessionId: session.id,
+      checkoutUrl: session.url || '',
     };
   }
 
@@ -108,7 +123,13 @@ export class SubscriptionService {
     sessionId: string,
     userId: string,
   ): Promise<SubscriptionResponseDto> {
-    this.logger.log(`Verifying payment for checkout/order: ${sessionId}`);
+    this.logger.log(`Verifying payment for session: ${sessionId}`);
+
+    const session = await this.stripeService.getCheckoutSession(sessionId);
+
+    if (session.payment_status !== 'paid') {
+      throw new BadRequestException('Payment not completed');
+    }
 
     const subscription = await this.subscriptionRepository.findOne({
       where: { userId },
@@ -118,26 +139,78 @@ export class SubscriptionService {
       throw new NotFoundException('Subscription not found');
     }
 
-    // Attempt direct order verification first if caller provides order id.
-    if (sessionId) {
-      await this.trySyncFromOrder(sessionId, userId);
+    // Update subscription based on session metadata
+    const planId = session.metadata?.planId as SubscriptionPlan;
+    if (!planId) {
+      throw new BadRequestException('Plan information missing from session');
     }
 
-    // Webhooks can arrive with delay; brief polling keeps app UX intact.
-    const synced = await this.waitForPremiumSubscription(userId, 5, 2000);
-    if (!synced) {
-      throw new BadRequestException('Payment not completed yet');
+    const isLifetime = planId === SubscriptionPlan.LIFETIME;
+
+    if (isLifetime) {
+      // Lifetime: no subscription ID, no end date
+      subscription.plan = SubscriptionPlan.LIFETIME;
+      subscription.status = SubscriptionStatus.ACTIVE;
+      subscription.stripeSubscriptionId = undefined;
+      subscription.currentPeriodStart = new Date();
+      subscription.currentPeriodEnd = undefined;
+      subscription.price = (session.amount_total || 0) / 100; // Convert from cents
+    } else {
+      // Recurring subscription
+      let stripeSubscription: any;
+
+      if (typeof session.subscription === 'string') {
+        // Si es un ID, obtener el objeto completo de Stripe
+        this.logger.log(`Fetching subscription details for: ${session.subscription}`);
+        stripeSubscription = await this.stripeService.getSubscription(session.subscription);
+      } else if (session.subscription && typeof session.subscription === 'object') {
+        stripeSubscription = session.subscription;
+      } else {
+        throw new BadRequestException('Subscription information missing from session');
+      }
+
+      // Buscar las fechas del período - pueden estar en diferentes lugares según la versión de la API
+      let periodStart = stripeSubscription.current_period_start;
+      let periodEnd = stripeSubscription.current_period_end;
+
+      // Si no están en el objeto principal, buscar en los items (API version 2026-01-28.clover)
+      if (!periodStart || !periodEnd) {
+        const firstItem = stripeSubscription.items?.data?.[0];
+        if (firstItem) {
+          periodStart = firstItem.current_period_start;
+          periodEnd = firstItem.current_period_end;
+          this.logger.log(`Using period dates from subscription item: start=${periodStart}, end=${periodEnd}`);
+        }
+      }
+
+      if (!periodStart || !periodEnd) {
+        this.logger.error(`Missing period dates in subscription: ${JSON.stringify(stripeSubscription)}`);
+        throw new BadRequestException('Invalid subscription data from Stripe');
+      }
+
+      subscription.plan = planId;
+      subscription.status = this.mapStripeStatus(stripeSubscription.status);
+      subscription.stripeSubscriptionId = stripeSubscription.id;
+
+      // Convertir timestamps de Unix a Date objects
+      subscription.currentPeriodStart = new Date(periodStart * 1000);
+      subscription.currentPeriodEnd = new Date(periodEnd * 1000);
+
+      // Validar que las fechas son válidas
+      if (isNaN(subscription.currentPeriodStart.getTime()) || isNaN(subscription.currentPeriodEnd.getTime())) {
+        this.logger.error(`Invalid dates - periodStart: ${periodStart}, periodEnd: ${periodEnd}`);
+        throw new BadRequestException('Invalid subscription period dates');
+      }
+
+      subscription.price = (stripeSubscription.items?.data?.[0]?.price?.unit_amount ?? 0) / 100;
     }
 
-    const updated = await this.subscriptionRepository.findOne({
-      where: { userId },
-    });
+    subscription.currency = session.currency || 'usd';
+    await this.subscriptionRepository.save(subscription);
 
-    if (!updated) {
-      throw new NotFoundException('Subscription not found');
-    }
+    this.logger.log(`Subscription updated for user: ${userId}, plan: ${subscription.plan}`);
 
-    return this.mapToDto(updated);
+    return this.mapToDto(subscription);
   }
 
   /**
@@ -191,23 +264,26 @@ export class SubscriptionService {
     }
 
     if (!subscription.stripeSubscriptionId) {
-      throw new BadRequestException('No active Lemon Squeezy subscription');
+      throw new BadRequestException('No active Stripe subscription');
     }
 
-    // Lemon Squeezy does not support an immediate hard-cancel mode in this flow.
-    await this.lemonSqueezyService.cancelSubscription(
+    // Cancel in Stripe
+    await this.stripeService.cancelSubscription(
       subscription.stripeSubscriptionId,
+      dto.cancelImmediately || false,
     );
 
-    subscription.cancelAtPeriodEnd = true;
+    // Update local subscription
     if (dto.cancelImmediately) {
       subscription.status = SubscriptionStatus.CANCELED;
       subscription.canceledAt = new Date();
+    } else {
+      subscription.cancelAtPeriodEnd = true;
     }
 
     await this.subscriptionRepository.save(subscription);
 
-    this.logger.log(`Subscription cancellation requested for user: ${userId}`);
+    this.logger.log(`Subscription canceled for user: ${userId}`);
 
     return this.mapToDto(subscription);
   }
@@ -233,13 +309,15 @@ export class SubscriptionService {
     }
 
     if (!subscription.stripeSubscriptionId) {
-      throw new BadRequestException('No Lemon Squeezy subscription to reactivate');
+      throw new BadRequestException('No Stripe subscription to reactivate');
     }
 
-    await this.lemonSqueezyService.reactivateSubscription(
+    // Reactivate in Stripe
+    await this.stripeService.reactivateSubscription(
       subscription.stripeSubscriptionId,
     );
 
+    // Update local subscription
     subscription.cancelAtPeriodEnd = false;
     subscription.canceledAt = undefined;
     await this.subscriptionRepository.save(subscription);
@@ -259,53 +337,52 @@ export class SubscriptionService {
       where: { userId },
     });
 
-    if (!subscription || !subscription.stripeSubscriptionId) {
-      throw new NotFoundException('No Lemon Squeezy subscription found');
+    if (!subscription || !subscription.stripeCustomerId) {
+      throw new NotFoundException('No Stripe customer found');
     }
 
-    const portalUrl = await this.lemonSqueezyService.getSubscriptionPortalUrl(
-      subscription.stripeSubscriptionId,
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:8081';
+    const returnUrl = `${frontendUrl}/subscription/status`;
+
+    const session = await this.stripeService.createCustomerPortalSession(
+      subscription.stripeCustomerId,
+      returnUrl,
     );
 
-    if (!portalUrl) {
-      throw new NotFoundException('No customer portal URL available');
-    }
-
     return {
-      portalUrl,
+      portalUrl: session.url,
     };
   }
 
   /**
-   * Handles Lemon Squeezy webhook events
+   * Handles Stripe webhook events
    */
-  async handleWebhookEvent(event: any): Promise<void> {
-    const eventName = event?.meta?.event_name || event?.event_name;
-    this.logger.log(`Processing webhook event: ${eventName || 'unknown'}`);
+  async handleWebhookEvent(event: Stripe.Event): Promise<void> {
+    this.logger.log(`Processing webhook event: ${event.type}`);
 
-    switch (eventName) {
-      case 'order_created':
-        await this.handleOrderCreated(event);
+    switch (event.type) {
+      case 'checkout.session.completed':
+        await this.handleCheckoutSessionCompleted(event.data.object);
         break;
 
-      case 'subscription_created':
-      case 'subscription_updated':
-      case 'subscription_resumed':
-      case 'subscription_unpaused':
-        await this.handleLemonSubscriptionUpsert(event);
+      case 'customer.subscription.updated':
+        await this.handleSubscriptionUpdated(event.data.object);
         break;
 
-      case 'subscription_cancelled':
-      case 'subscription_paused':
-        await this.handleLemonSubscriptionCanceled(event);
+      case 'customer.subscription.deleted':
+        await this.handleSubscriptionDeleted(event.data.object);
         break;
 
-      case 'subscription_expired':
-        await this.handleLemonSubscriptionExpired(event);
+      case 'invoice.payment_succeeded':
+        await this.handleInvoicePaymentSucceeded(event.data.object);
+        break;
+
+      case 'invoice.payment_failed':
+        await this.handleInvoicePaymentFailed(event.data.object);
         break;
 
       default:
-        this.logger.log(`Unhandled event type: ${eventName || 'unknown'}`);
+        this.logger.log(`Unhandled event type: ${event.type}`);
     }
   }
 
@@ -354,264 +431,128 @@ export class SubscriptionService {
 
   // ==================== PRIVATE METHODS ====================
 
-  private async trySyncFromOrder(
-    sessionOrOrderId: string,
-    userId: string,
+  private async handleCheckoutSessionCompleted(
+    session: any,
   ): Promise<void> {
-    try {
-      const order = await this.lemonSqueezyService.getOrder(sessionOrOrderId);
-      await this.applyOrderToSubscription(order, userId);
-    } catch (error) {
-      this.logger.debug(
-        `Order sync skipped for ${sessionOrOrderId}: ${(error as Error).message}`,
-      );
-    }
-  }
-
-  private async waitForPremiumSubscription(
-    userId: string,
-    attempts: number,
-    delayMs: number,
-  ): Promise<boolean> {
-    for (let i = 0; i < attempts; i += 1) {
-      const subscription = await this.subscriptionRepository.findOne({
-        where: { userId },
-      });
-
-      if (subscription && this.isPremiumPlan(subscription.plan) && subscription.status === SubscriptionStatus.ACTIVE) {
-        return true;
-      }
-
-      await this.sleep(delayMs);
-    }
-
-    return false;
-  }
-
-  private async handleOrderCreated(event: any): Promise<void> {
-    const userId = this.extractUserId(event);
-    const orderData = event?.data;
-
-    if (!userId || !orderData) {
-      this.logger.warn('Skipping order_created: missing userId or order data');
+    const userId = session.metadata?.userId;
+    if (!userId) {
+      this.logger.warn('No userId in checkout session metadata');
       return;
     }
 
-    await this.applyOrderToSubscription(orderData, userId);
+    // Payment will be verified via verifyPayment endpoint
+    this.logger.log(`Checkout completed for user: ${userId}`);
   }
 
-  private async applyOrderToSubscription(
-    orderData: any,
-    userId: string,
+  private async handleSubscriptionUpdated(
+    stripeSubscription: any,
   ): Promise<void> {
-    const subscription = await this.getOrCreateSubscription(userId);
-
-    const orderAttributes = (orderData.attributes || {}) as Record<string, any>;
-    const paid = String(orderAttributes.status || '').toLowerCase() === 'paid';
-
-    if (!paid) {
-      this.logger.warn(`Order ${orderData.id} is not paid yet`);
-      return;
-    }
-
-    const planFromCustomData = this.normalizePlan(
-      this.extractPlanIdFromCustomData(orderAttributes),
-    );
-
-    const variantId = this.extractVariantId(orderAttributes);
-    const planFromVariant = variantId ? this.mapVariantIdToPlan(variantId) : undefined;
-
-    const plan = planFromCustomData || planFromVariant;
-    if (!plan) {
-      throw new BadRequestException('Unable to determine subscription plan from Lemon order');
-    }
-
-    subscription.plan = plan;
-    subscription.status = SubscriptionStatus.ACTIVE;
-    subscription.currentPeriodStart = new Date();
-    subscription.currency = String(orderAttributes.currency || 'usd').toLowerCase();
-    subscription.price = Number(orderAttributes.total_usd || orderAttributes.subtotal_usd || 0);
-
-    const lemonSubscriptionId = this.extractLemonSubscriptionId(orderAttributes);
-    subscription.stripeSubscriptionId = lemonSubscriptionId;
-
-    const customerId = orderAttributes.customer_id;
-    if (customerId) {
-      subscription.stripeCustomerId = String(customerId);
-    }
-
-    if (plan === SubscriptionPlan.LIFETIME) {
-      subscription.currentPeriodEnd = undefined;
-      subscription.cancelAtPeriodEnd = false;
-      subscription.canceledAt = undefined;
-    } else if (lemonSubscriptionId) {
-      await this.syncSubscriptionPeriodFromLemon(subscription, lemonSubscriptionId);
-    }
-
-    await this.subscriptionRepository.save(subscription);
-
-    this.logger.log(`Subscription synced from order ${orderData.id} for user: ${userId}`);
-  }
-
-  private async handleLemonSubscriptionUpsert(event: any): Promise<void> {
-    const lemonSubscription = event?.data;
-    const lemonSubscriptionId = lemonSubscription?.id;
-
-    if (!lemonSubscriptionId) {
-      this.logger.warn('Skipping subscription upsert event: missing subscription id');
-      return;
-    }
-
-    let subscription = await this.subscriptionRepository.findOne({
-      where: { stripeSubscriptionId: String(lemonSubscriptionId) },
+    const subscription = await this.subscriptionRepository.findOne({
+      where: { stripeSubscriptionId: stripeSubscription.id },
     });
 
     if (!subscription) {
-      const userId = this.extractUserId(event);
-      if (!userId) {
-        this.logger.warn(
-          `No local subscription found for Lemon subscription ${lemonSubscriptionId} and userId missing in webhook`,
-        );
-        return;
+      this.logger.warn(`No subscription found for Stripe subscription: ${stripeSubscription.id}`);
+      return;
+    }
+
+    // Buscar las fechas del período - pueden estar en diferentes lugares según la versión de la API
+    let periodStart = stripeSubscription.current_period_start;
+    let periodEnd = stripeSubscription.current_period_end;
+
+    // Si no están en el objeto principal, buscar en los items
+    if (!periodStart || !periodEnd) {
+      const firstItem = stripeSubscription.items?.data?.[0];
+      if (firstItem) {
+        periodStart = firstItem.current_period_start;
+        periodEnd = firstItem.current_period_end;
       }
-
-      subscription = await this.getOrCreateSubscription(userId);
-      subscription.stripeSubscriptionId = String(lemonSubscriptionId);
     }
 
-    const attributes = (lemonSubscription.attributes || {}) as Record<string, any>;
-    const status = String(attributes.status || '').toLowerCase();
-
-    const planFromCustomData = this.normalizePlan(this.extractPlanId(event));
-    subscription.plan = planFromCustomData || subscription.plan || SubscriptionPlan.MONTHLY;
-    subscription.status = this.mapLemonStatus(status);
-    subscription.cancelAtPeriodEnd = Boolean(attributes.cancelled);
-
-    const createdAt = this.parseDate(attributes.created_at);
-    const renewsAt = this.parseDate(attributes.renews_at);
-
-    if (createdAt) {
-      subscription.currentPeriodStart = createdAt;
+    subscription.status = this.mapStripeStatus(stripeSubscription.status);
+    if (periodStart && periodEnd) {
+      subscription.currentPeriodStart = new Date(periodStart * 1000);
+      subscription.currentPeriodEnd = new Date(periodEnd * 1000);
     }
-
-    if (renewsAt) {
-      subscription.currentPeriodEnd = renewsAt;
-    }
-
-    if (subscription.cancelAtPeriodEnd) {
-      subscription.canceledAt = this.parseDate(attributes.ends_at) || new Date();
-    } else {
-      subscription.canceledAt = undefined;
-    }
+    subscription.cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end;
 
     await this.subscriptionRepository.save(subscription);
-    this.logger.log(`Subscription updated for Lemon subscription: ${lemonSubscriptionId}`);
+    this.logger.log(`Subscription updated for Stripe subscription: ${stripeSubscription.id}`);
   }
 
-  private async handleLemonSubscriptionCanceled(event: any): Promise<void> {
-    const lemonSubscriptionId = event?.data?.id;
-
-    if (!lemonSubscriptionId) {
-      this.logger.warn('Skipping canceled webhook: missing subscription id');
-      return;
-    }
-
+  private async handleSubscriptionDeleted(
+    stripeSubscription: any,
+  ): Promise<void> {
     const subscription = await this.subscriptionRepository.findOne({
-      where: { stripeSubscriptionId: String(lemonSubscriptionId) },
+      where: { stripeSubscriptionId: stripeSubscription.id },
     });
 
     if (!subscription) {
-      this.logger.warn(`No subscription found for Lemon subscription: ${lemonSubscriptionId}`);
-      return;
-    }
-
-    subscription.status = SubscriptionStatus.CANCELED;
-    subscription.cancelAtPeriodEnd = true;
-    subscription.canceledAt = new Date();
-
-    await this.subscriptionRepository.save(subscription);
-  }
-
-  private async handleLemonSubscriptionExpired(event: any): Promise<void> {
-    const lemonSubscriptionId = event?.data?.id;
-
-    if (!lemonSubscriptionId) {
-      this.logger.warn('Skipping expired webhook: missing subscription id');
-      return;
-    }
-
-    const subscription = await this.subscriptionRepository.findOne({
-      where: { stripeSubscriptionId: String(lemonSubscriptionId) },
-    });
-
-    if (!subscription) {
-      this.logger.warn(`No subscription found for Lemon subscription: ${lemonSubscriptionId}`);
+      this.logger.warn(`No subscription found for Stripe subscription: ${stripeSubscription.id}`);
       return;
     }
 
     subscription.status = SubscriptionStatus.EXPIRED;
     subscription.plan = SubscriptionPlan.FREE;
-    subscription.cancelAtPeriodEnd = false;
     subscription.canceledAt = new Date();
 
     await this.subscriptionRepository.save(subscription);
+    this.logger.log(`Subscription deleted for Stripe subscription: ${stripeSubscription.id}`);
   }
 
-  private getVariantIdForPlan(plan: SubscriptionPlan): string {
+  private async handleInvoicePaymentSucceeded(
+    invoice: any,
+  ): Promise<void> {
+    this.logger.log(`Invoice payment succeeded: ${invoice.id}`);
+    // Subscription will be updated via subscription.updated event
+  }
+
+  private async handleInvoicePaymentFailed(
+    invoice: any,
+  ): Promise<void> {
+    this.logger.log(`Invoice payment failed: ${invoice.id}`);
+    const subscriptionId = typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id;
+
+    if (subscriptionId) {
+      const subscription = await this.subscriptionRepository.findOne({
+        where: { stripeSubscriptionId: subscriptionId },
+      });
+
+      if (subscription) {
+        subscription.status = SubscriptionStatus.PAST_DUE;
+        await this.subscriptionRepository.save(subscription);
+      }
+    }
+  }
+
+  private getPriceIdForPlan(plan: SubscriptionPlan): string {
     switch (plan) {
       case SubscriptionPlan.MONTHLY:
-        return this.getRequiredVariantConfig('LEMON_SQUEEZY_MONTHLY_VARIANT_ID');
+        return this.configService.get<string>('STRIPE_MONTHLY_PRICE_ID') || '';
       case SubscriptionPlan.YEARLY:
-        return this.getRequiredVariantConfig('LEMON_SQUEEZY_YEARLY_VARIANT_ID');
+        return this.configService.get<string>('STRIPE_YEARLY_PRICE_ID') || '';
       case SubscriptionPlan.LIFETIME:
-        return this.getRequiredVariantConfig('LEMON_SQUEEZY_LIFETIME_VARIANT_ID');
+        return this.configService.get<string>('STRIPE_LIFETIME_PRICE_ID') || '';
       default:
         throw new BadRequestException('Invalid plan');
     }
   }
 
-  private getRequiredVariantConfig(key: string): string {
-    const value = this.configService.get<string>(key);
-    if (!value) {
-      throw new BadRequestException(`${key} is not configured`);
-    }
-
-    return value;
-  }
-
-  private mapVariantIdToPlan(variantId: string): SubscriptionPlan | undefined {
-    const normalized = String(variantId);
-
-    if (normalized === this.configService.get<string>('LEMON_SQUEEZY_MONTHLY_VARIANT_ID')) {
-      return SubscriptionPlan.MONTHLY;
-    }
-
-    if (normalized === this.configService.get<string>('LEMON_SQUEEZY_YEARLY_VARIANT_ID')) {
-      return SubscriptionPlan.YEARLY;
-    }
-
-    if (normalized === this.configService.get<string>('LEMON_SQUEEZY_LIFETIME_VARIANT_ID')) {
-      return SubscriptionPlan.LIFETIME;
-    }
-
-    return undefined;
-  }
-
-  private mapLemonStatus(status: string): SubscriptionStatus {
-    switch (status) {
+  private mapStripeStatus(
+    stripeStatus: string,
+  ): SubscriptionStatus {
+    switch (stripeStatus) {
       case 'active':
-      case 'on_trial':
-      case 'trialing':
         return SubscriptionStatus.ACTIVE;
-      case 'cancelled':
       case 'canceled':
         return SubscriptionStatus.CANCELED;
       case 'past_due':
-      case 'paused':
-      case 'unpaid':
         return SubscriptionStatus.PAST_DUE;
       case 'incomplete':
+      case 'incomplete_expired':
         return SubscriptionStatus.INCOMPLETE;
+      case 'trialing':
+        return SubscriptionStatus.TRIAL;
       default:
         return SubscriptionStatus.EXPIRED;
     }
@@ -654,106 +595,6 @@ export class SubscriptionService {
       SubscriptionPlan.YEARLY,
       SubscriptionPlan.LIFETIME,
     ].includes(plan);
-  }
-
-  private async syncSubscriptionPeriodFromLemon(
-    subscription: SubscriptionEntity,
-    lemonSubscriptionId: string,
-  ): Promise<void> {
-    try {
-      const remoteSubscription = await this.lemonSqueezyService.getSubscription(
-        lemonSubscriptionId,
-      );
-      const attributes = (remoteSubscription.attributes || {}) as Record<string, any>;
-
-      const currentPeriodStart =
-        this.parseDate(attributes.created_at) || new Date();
-      const currentPeriodEnd = this.parseDate(attributes.renews_at);
-
-      subscription.currentPeriodStart = currentPeriodStart;
-      subscription.currentPeriodEnd = currentPeriodEnd;
-      subscription.status = this.mapLemonStatus(
-        String(attributes.status || 'active').toLowerCase(),
-      );
-      subscription.cancelAtPeriodEnd = Boolean(attributes.cancelled);
-    } catch (error) {
-      this.logger.warn(
-        `Unable to sync period from Lemon subscription ${lemonSubscriptionId}: ${(error as Error).message}`,
-      );
-      subscription.currentPeriodStart = new Date();
-    }
-  }
-
-  private extractUserId(event: any): string | undefined {
-    const customData = event?.meta?.custom_data || event?.data?.attributes?.custom_data || {};
-    const userId = customData.userId || customData.user_id;
-    return userId ? String(userId) : undefined;
-  }
-
-  private extractPlanId(event: any): string | undefined {
-    const customData = event?.meta?.custom_data || event?.data?.attributes?.custom_data || {};
-    const planId = customData.planId || customData.plan_id;
-    return planId ? String(planId) : undefined;
-  }
-
-  private extractPlanIdFromCustomData(orderAttributes: Record<string, any>): string | undefined {
-    const customData = orderAttributes.custom_data || orderAttributes.checkout_data?.custom || {};
-    const planId = customData.planId || customData.plan_id;
-    return planId ? String(planId) : undefined;
-  }
-
-  private normalizePlan(value?: string): SubscriptionPlan | undefined {
-    if (!value) {
-      return undefined;
-    }
-
-    const normalized = value.toLowerCase();
-    switch (normalized) {
-      case SubscriptionPlan.MONTHLY:
-        return SubscriptionPlan.MONTHLY;
-      case SubscriptionPlan.YEARLY:
-        return SubscriptionPlan.YEARLY;
-      case SubscriptionPlan.LIFETIME:
-        return SubscriptionPlan.LIFETIME;
-      case SubscriptionPlan.FREE:
-        return SubscriptionPlan.FREE;
-      default:
-        return undefined;
-    }
-  }
-
-  private extractVariantId(orderAttributes: Record<string, any>): string | undefined {
-    const firstOrderItem = orderAttributes.first_order_item || {};
-    const variantId = firstOrderItem.variant_id || firstOrderItem.variantId;
-    return variantId ? String(variantId) : undefined;
-  }
-
-  private extractLemonSubscriptionId(orderAttributes: Record<string, any>): string | undefined {
-    const firstOrderItem = orderAttributes.first_order_item || {};
-    const subscriptionId =
-      firstOrderItem.subscription_id ||
-      firstOrderItem.subscriptionId ||
-      orderAttributes.subscription_id ||
-      orderAttributes.subscriptionId;
-
-    return subscriptionId ? String(subscriptionId) : undefined;
-  }
-
-  private parseDate(value: unknown): Date | undefined {
-    if (!value) {
-      return undefined;
-    }
-
-    const date = new Date(String(value));
-    if (Number.isNaN(date.getTime())) {
-      return undefined;
-    }
-
-    return date;
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private async countUserRoutines(userId: string): Promise<number> {
