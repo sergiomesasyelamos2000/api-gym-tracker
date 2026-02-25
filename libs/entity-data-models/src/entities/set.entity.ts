@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { RoutineExerciseEntity } from './routine-exercise.entity';
-import { WeightUnit, RepsType, SetType } from '../dtos/shared-types';
+import { SetType } from '../dtos/shared-types';
 
 @Entity('sets')
 export class SetEntity {
@@ -30,6 +30,14 @@ export class SetEntity {
   })
   @Column({ type: 'int', nullable: true })
   reps?: number;
+
+  @ApiProperty({
+    example: 2,
+    nullable: true,
+    description: 'Número de repeticiones asistidas en el set',
+  })
+  @Column({ type: 'int', nullable: true })
+  assistedReps?: number;
 
   @Column({ type: 'int', nullable: true })
   repsMin?: number;
