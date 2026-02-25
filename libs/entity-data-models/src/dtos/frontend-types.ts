@@ -307,6 +307,7 @@ export interface CreateCheckoutSessionRequestDto {
 
 export interface VerifyPaymentRequestDto {
   sessionId: string;
+  planId?: SubscriptionPlan;
 }
 
 export interface CancelSubscriptionRequestDto {
@@ -317,8 +318,8 @@ export interface CancelSubscriptionRequestDto {
 export interface SubscriptionResponseDto {
   id: string;
   userId: string;
-  stripeCustomerId?: string;
-  stripeSubscriptionId?: string;
+  lemonCustomerId?: string;
+  lemonSubscriptionId?: string;
   plan: SubscriptionPlan;
   status: SubscriptionStatus;
   currentPeriodStart?: Date;

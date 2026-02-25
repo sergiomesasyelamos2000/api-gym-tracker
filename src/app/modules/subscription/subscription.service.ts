@@ -44,9 +44,7 @@ export class SubscriptionService {
   /**
    * Gets or creates a subscription for a user
    */
-  async getOrCreateSubscription(
-    userId: string,
-  ): Promise<SubscriptionEntity> {
+  async getOrCreateSubscription(userId: string): Promise<SubscriptionEntity> {
     let subscription = await this.subscriptionRepository.findOne({
       where: { userId },
     });
@@ -75,7 +73,9 @@ export class SubscriptionService {
     name: string,
     dto: CreateCheckoutSessionRequestDto,
   ): Promise<CheckoutSessionResponseDto> {
-    this.logger.log(`Creating checkout session for user: ${userId}, plan: ${dto.planId}`);
+    this.logger.log(
+      `Creating checkout session for user: ${userId}, plan: ${dto.planId}`,
+    );
 
     // Ensure subscription row exists
     await this.getOrCreateSubscription(userId);
@@ -84,7 +84,8 @@ export class SubscriptionService {
     const variantId = this.getVariantIdForPlan(dto.planId);
 
     // Create checkout session
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:8081';
+    const frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:8081';
     const successUrl = dto.successUrl || `${frontendUrl}/subscription/success`;
     const checkout = await this.lemonSqueezyService.createCheckoutSession({
       variantId,
@@ -107,6 +108,8 @@ export class SubscriptionService {
   async verifyPayment(
     sessionId: string,
     userId: string,
+    userEmail: string,
+    expectedPlan?: SubscriptionPlan,
   ): Promise<SubscriptionResponseDto> {
     this.logger.log(`Verifying payment for checkout/order: ${sessionId}`);
 
@@ -118,13 +121,53 @@ export class SubscriptionService {
       throw new NotFoundException('Subscription not found');
     }
 
-    // Attempt direct order verification first if caller provides order id.
-    if (sessionId) {
+    const isNumericOrderId = sessionId && /^\d+$/.test(sessionId.trim());
+
+    if (isNumericOrderId) {
+      this.logger.log(
+        `Attempting direct order sync for order_id: ${sessionId}`,
+      );
       await this.trySyncFromOrder(sessionId, userId);
+    } else {
+      const orderIdFromCheckout = await this.resolveOrderIdFromCheckout(
+        sessionId,
+      );
+
+      if (orderIdFromCheckout) {
+        this.logger.log(
+          `Resolved order_id ${orderIdFromCheckout} from checkout ${sessionId}`,
+        );
+        await this.trySyncFromOrder(orderIdFromCheckout, userId);
+      } else {
+        const recentOrderId = await this.findRecentPaidOrderIdForUser(
+          userEmail,
+          expectedPlan,
+        );
+
+        if (recentOrderId) {
+          this.logger.log(
+            `Resolved recent paid order ${recentOrderId} for user ${userId}`,
+          );
+          await this.trySyncFromOrder(recentOrderId, userId);
+        } else {
+          const syncedFromSubscription =
+            await this.trySyncFromRecentLemonSubscription(
+              userId,
+              userEmail,
+              expectedPlan,
+            );
+
+          if (!syncedFromSubscription) {
+            this.logger.debug(
+              `Could not resolve order_id from checkout ${sessionId}. Waiting for webhook sync.`,
+            );
+          }
+        }
+      }
     }
 
     // Webhooks can arrive with delay; brief polling keeps app UX intact.
-    const synced = await this.waitForPremiumSubscription(userId, 5, 2000);
+    const synced = await this.waitForPremiumSubscription(userId, 15, 2000);
     if (!synced) {
       throw new BadRequestException('Payment not completed yet');
     }
@@ -140,6 +183,197 @@ export class SubscriptionService {
     return this.mapToDto(updated);
   }
 
+  private async resolveOrderIdFromCheckout(
+    checkoutId: string,
+  ): Promise<string | undefined> {
+    if (!checkoutId) {
+      return undefined;
+    }
+
+    try {
+      const checkout = await this.lemonSqueezyService.getCheckout(checkoutId);
+      const attributes = (checkout?.attributes || {}) as Record<string, any>;
+      const relationships = (checkout?.relationships || {}) as Record<
+        string,
+        any
+      >;
+
+      const possibleOrderIds = [
+        attributes.order_id,
+        attributes.orderId,
+        attributes.first_order_item?.order_id,
+        attributes.first_order_item?.orderId,
+        relationships.order?.data?.id,
+      ];
+
+      for (const id of possibleOrderIds) {
+        if (id) {
+          return String(id);
+        }
+      }
+    } catch (error) {
+      this.logger.debug(
+        `Checkout lookup failed for ${checkoutId}: ${(error as Error).message}`,
+      );
+    }
+
+    return undefined;
+  }
+
+  private async findRecentPaidOrderIdForUser(
+    userEmail: string,
+    expectedPlan?: SubscriptionPlan,
+  ): Promise<string | undefined> {
+    const maxPages = 5;
+    const pageSize = 50;
+    const now = Date.now();
+    const maxAgeMs = 30 * 60 * 1000;
+
+    for (let page = 1; page <= maxPages; page += 1) {
+      let orders: Array<Record<string, unknown>> = [];
+
+      try {
+        orders = await this.lemonSqueezyService.listOrdersByUserEmail(
+          userEmail,
+          page,
+          pageSize,
+        );
+      } catch (error) {
+        this.logger.debug(
+          `Order list lookup failed on page ${page} for ${userEmail}: ${(error as Error).message}`,
+        );
+        return undefined;
+      }
+
+      for (const order of orders) {
+        const attributes = (order.attributes || {}) as Record<string, any>;
+
+        const isPaid = String(attributes.status || '').toLowerCase() === 'paid';
+        if (!isPaid) {
+          continue;
+        }
+
+        if (expectedPlan) {
+          const variantId = this.extractVariantId(attributes);
+          const planFromVariant = variantId
+            ? this.mapVariantIdToPlan(variantId)
+            : undefined;
+
+          const planFromCustomData = this.normalizePlan(
+            this.extractPlanIdFromCustomData(attributes),
+          );
+          const orderPlan = planFromCustomData || planFromVariant;
+
+          if (!orderPlan || orderPlan !== expectedPlan) {
+            continue;
+          }
+        }
+
+        const createdAt = this.parseDate(attributes.created_at);
+        if (createdAt && now - createdAt.getTime() > maxAgeMs) {
+          continue;
+        }
+
+        if (order.id) {
+          return String(order.id);
+        }
+      }
+
+      if (orders.length < pageSize) {
+        break;
+      }
+    }
+
+    this.logger.debug(
+      `No recent paid orders found for ${userEmail}${expectedPlan ? ` with expected plan ${expectedPlan}` : ''}`,
+    );
+    return undefined;
+  }
+
+  private async trySyncFromRecentLemonSubscription(
+    userId: string,
+    userEmail: string,
+    expectedPlan?: SubscriptionPlan,
+  ): Promise<boolean> {
+    let lemonSubscriptions: Array<Record<string, unknown>> = [];
+
+    try {
+      lemonSubscriptions = await this.lemonSqueezyService.listSubscriptionsByUserEmail(
+        userEmail,
+        'active',
+        1,
+        20,
+      );
+    } catch (error) {
+      this.logger.debug(
+        `Subscription list lookup failed for ${userEmail}: ${(error as Error).message}`,
+      );
+      return false;
+    }
+
+    for (const lemonSubscription of lemonSubscriptions) {
+      const attributes = (lemonSubscription.attributes || {}) as Record<
+        string,
+        any
+      >;
+      const lemonStatus = String(attributes.status || '').toLowerCase();
+      const mappedStatus = this.mapLemonStatus(lemonStatus);
+      if (mappedStatus !== SubscriptionStatus.ACTIVE) {
+        continue;
+      }
+
+      const variantId =
+        attributes.variant_id ||
+        attributes.variantId ||
+        attributes.first_subscription_item?.variant_id ||
+        attributes.first_subscription_item?.variantId;
+      const planFromVariant = variantId
+        ? this.mapVariantIdToPlan(String(variantId))
+        : undefined;
+      const plan =
+        expectedPlan ||
+        planFromVariant ||
+        this.normalizePlan(this.extractPlanIdFromCustomData(attributes));
+
+      if (!plan) {
+        continue;
+      }
+
+      if (expectedPlan && plan !== expectedPlan) {
+        continue;
+      }
+
+      const subscription = await this.getOrCreateSubscription(userId);
+      subscription.plan = plan;
+      subscription.status = SubscriptionStatus.ACTIVE;
+      subscription.lemonSubscriptionId = String(lemonSubscription.id);
+
+      const customerId = attributes.customer_id || attributes.customerId;
+      if (customerId) {
+        subscription.lemonCustomerId = String(customerId);
+      }
+
+      const createdAt = this.parseDate(attributes.created_at) || new Date();
+      const renewsAt = this.parseDate(attributes.renews_at);
+      subscription.currentPeriodStart = createdAt;
+      subscription.currentPeriodEnd = renewsAt;
+      subscription.cancelAtPeriodEnd = Boolean(attributes.cancelled);
+      subscription.canceledAt = subscription.cancelAtPeriodEnd
+        ? this.parseDate(attributes.ends_at) || new Date()
+        : undefined;
+
+      await this.subscriptionRepository.save(subscription);
+      this.logger.log(
+        `Subscription synced directly from Lemon subscription ${lemonSubscription.id} for user ${userId}`,
+      );
+      return true;
+    }
+
+    this.logger.debug(
+      `No active Lemon subscriptions matched for ${userEmail}${expectedPlan ? ` and plan ${expectedPlan}` : ''}`,
+    );
+    return false;
+  }
   /**
    * Gets subscription status with features
    */
@@ -151,10 +385,15 @@ export class SubscriptionService {
     const isPremium = this.isPremiumPlan(subscription.plan);
 
     let daysRemaining: number | undefined;
-    if (subscription.currentPeriodEnd && subscription.plan !== SubscriptionPlan.LIFETIME) {
+    if (
+      subscription.currentPeriodEnd &&
+      subscription.plan !== SubscriptionPlan.LIFETIME
+    ) {
       const now = new Date();
       const endDate = new Date(subscription.currentPeriodEnd);
-      daysRemaining = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      daysRemaining = Math.ceil(
+        (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+      );
     }
 
     return {
@@ -190,13 +429,13 @@ export class SubscriptionService {
       throw new BadRequestException('Cannot cancel lifetime subscription');
     }
 
-    if (!subscription.stripeSubscriptionId) {
+    if (!subscription.lemonSubscriptionId) {
       throw new BadRequestException('No active Lemon Squeezy subscription');
     }
 
     // Lemon Squeezy does not support an immediate hard-cancel mode in this flow.
     await this.lemonSqueezyService.cancelSubscription(
-      subscription.stripeSubscriptionId,
+      subscription.lemonSubscriptionId,
     );
 
     subscription.cancelAtPeriodEnd = true;
@@ -232,12 +471,14 @@ export class SubscriptionService {
       throw new BadRequestException('Subscription is not set to cancel');
     }
 
-    if (!subscription.stripeSubscriptionId) {
-      throw new BadRequestException('No Lemon Squeezy subscription to reactivate');
+    if (!subscription.lemonSubscriptionId) {
+      throw new BadRequestException(
+        'No Lemon Squeezy subscription to reactivate',
+      );
     }
 
     await this.lemonSqueezyService.reactivateSubscription(
-      subscription.stripeSubscriptionId,
+      subscription.lemonSubscriptionId,
     );
 
     subscription.cancelAtPeriodEnd = false;
@@ -259,12 +500,12 @@ export class SubscriptionService {
       where: { userId },
     });
 
-    if (!subscription || !subscription.stripeSubscriptionId) {
+    if (!subscription || !subscription.lemonSubscriptionId) {
       throw new NotFoundException('No Lemon Squeezy subscription found');
     }
 
     const portalUrl = await this.lemonSqueezyService.getSubscriptionPortalUrl(
-      subscription.stripeSubscriptionId,
+      subscription.lemonSubscriptionId,
     );
 
     if (!portalUrl) {
@@ -312,10 +553,7 @@ export class SubscriptionService {
   /**
    * Checks if user has access to a feature
    */
-  async checkFeatureAccess(
-    userId: string,
-    feature: string,
-  ): Promise<boolean> {
+  async checkFeatureAccess(userId: string, feature: string): Promise<boolean> {
     const subscription = await this.getOrCreateSubscription(userId);
     const features = this.getFeaturesByPlan(subscription.plan);
 
@@ -378,7 +616,11 @@ export class SubscriptionService {
         where: { userId },
       });
 
-      if (subscription && this.isPremiumPlan(subscription.plan) && subscription.status === SubscriptionStatus.ACTIVE) {
+      if (
+        subscription &&
+        this.isPremiumPlan(subscription.plan) &&
+        subscription.status === SubscriptionStatus.ACTIVE
+      ) {
         return true;
       }
 
@@ -419,25 +661,34 @@ export class SubscriptionService {
     );
 
     const variantId = this.extractVariantId(orderAttributes);
-    const planFromVariant = variantId ? this.mapVariantIdToPlan(variantId) : undefined;
+    const planFromVariant = variantId
+      ? this.mapVariantIdToPlan(variantId)
+      : undefined;
 
     const plan = planFromCustomData || planFromVariant;
     if (!plan) {
-      throw new BadRequestException('Unable to determine subscription plan from Lemon order');
+      throw new BadRequestException(
+        'Unable to determine subscription plan from Lemon order',
+      );
     }
 
     subscription.plan = plan;
     subscription.status = SubscriptionStatus.ACTIVE;
     subscription.currentPeriodStart = new Date();
-    subscription.currency = String(orderAttributes.currency || 'usd').toLowerCase();
-    subscription.price = Number(orderAttributes.total_usd || orderAttributes.subtotal_usd || 0);
+    subscription.currency = String(
+      orderAttributes.currency || 'usd',
+    ).toLowerCase();
+    subscription.price = Number(
+      orderAttributes.total_usd || orderAttributes.subtotal_usd || 0,
+    );
 
-    const lemonSubscriptionId = this.extractLemonSubscriptionId(orderAttributes);
-    subscription.stripeSubscriptionId = lemonSubscriptionId;
+    const lemonSubscriptionId =
+      this.extractLemonSubscriptionId(orderAttributes);
+    subscription.lemonSubscriptionId = lemonSubscriptionId;
 
     const customerId = orderAttributes.customer_id;
     if (customerId) {
-      subscription.stripeCustomerId = String(customerId);
+      subscription.lemonCustomerId = String(customerId);
     }
 
     if (plan === SubscriptionPlan.LIFETIME) {
@@ -445,12 +696,17 @@ export class SubscriptionService {
       subscription.cancelAtPeriodEnd = false;
       subscription.canceledAt = undefined;
     } else if (lemonSubscriptionId) {
-      await this.syncSubscriptionPeriodFromLemon(subscription, lemonSubscriptionId);
+      await this.syncSubscriptionPeriodFromLemon(
+        subscription,
+        lemonSubscriptionId,
+      );
     }
 
     await this.subscriptionRepository.save(subscription);
 
-    this.logger.log(`Subscription synced from order ${orderData.id} for user: ${userId}`);
+    this.logger.log(
+      `Subscription synced from order ${orderData.id} for user: ${userId}`,
+    );
   }
 
   private async handleLemonSubscriptionUpsert(event: any): Promise<void> {
@@ -458,12 +714,14 @@ export class SubscriptionService {
     const lemonSubscriptionId = lemonSubscription?.id;
 
     if (!lemonSubscriptionId) {
-      this.logger.warn('Skipping subscription upsert event: missing subscription id');
+      this.logger.warn(
+        'Skipping subscription upsert event: missing subscription id',
+      );
       return;
     }
 
     let subscription = await this.subscriptionRepository.findOne({
-      where: { stripeSubscriptionId: String(lemonSubscriptionId) },
+      where: { lemonSubscriptionId: String(lemonSubscriptionId) },
     });
 
     if (!subscription) {
@@ -476,14 +734,18 @@ export class SubscriptionService {
       }
 
       subscription = await this.getOrCreateSubscription(userId);
-      subscription.stripeSubscriptionId = String(lemonSubscriptionId);
+      subscription.lemonSubscriptionId = String(lemonSubscriptionId);
     }
 
-    const attributes = (lemonSubscription.attributes || {}) as Record<string, any>;
+    const attributes = (lemonSubscription.attributes || {}) as Record<
+      string,
+      any
+    >;
     const status = String(attributes.status || '').toLowerCase();
 
     const planFromCustomData = this.normalizePlan(this.extractPlanId(event));
-    subscription.plan = planFromCustomData || subscription.plan || SubscriptionPlan.MONTHLY;
+    subscription.plan =
+      planFromCustomData || subscription.plan || SubscriptionPlan.MONTHLY;
     subscription.status = this.mapLemonStatus(status);
     subscription.cancelAtPeriodEnd = Boolean(attributes.cancelled);
 
@@ -499,13 +761,16 @@ export class SubscriptionService {
     }
 
     if (subscription.cancelAtPeriodEnd) {
-      subscription.canceledAt = this.parseDate(attributes.ends_at) || new Date();
+      subscription.canceledAt =
+        this.parseDate(attributes.ends_at) || new Date();
     } else {
       subscription.canceledAt = undefined;
     }
 
     await this.subscriptionRepository.save(subscription);
-    this.logger.log(`Subscription updated for Lemon subscription: ${lemonSubscriptionId}`);
+    this.logger.log(
+      `Subscription updated for Lemon subscription: ${lemonSubscriptionId}`,
+    );
   }
 
   private async handleLemonSubscriptionCanceled(event: any): Promise<void> {
@@ -517,11 +782,13 @@ export class SubscriptionService {
     }
 
     const subscription = await this.subscriptionRepository.findOne({
-      where: { stripeSubscriptionId: String(lemonSubscriptionId) },
+      where: { lemonSubscriptionId: String(lemonSubscriptionId) },
     });
 
     if (!subscription) {
-      this.logger.warn(`No subscription found for Lemon subscription: ${lemonSubscriptionId}`);
+      this.logger.warn(
+        `No subscription found for Lemon subscription: ${lemonSubscriptionId}`,
+      );
       return;
     }
 
@@ -541,11 +808,13 @@ export class SubscriptionService {
     }
 
     const subscription = await this.subscriptionRepository.findOne({
-      where: { stripeSubscriptionId: String(lemonSubscriptionId) },
+      where: { lemonSubscriptionId: String(lemonSubscriptionId) },
     });
 
     if (!subscription) {
-      this.logger.warn(`No subscription found for Lemon subscription: ${lemonSubscriptionId}`);
+      this.logger.warn(
+        `No subscription found for Lemon subscription: ${lemonSubscriptionId}`,
+      );
       return;
     }
 
@@ -560,11 +829,15 @@ export class SubscriptionService {
   private getVariantIdForPlan(plan: SubscriptionPlan): string {
     switch (plan) {
       case SubscriptionPlan.MONTHLY:
-        return this.getRequiredVariantConfig('LEMON_SQUEEZY_MONTHLY_VARIANT_ID');
+        return this.getRequiredVariantConfig(
+          'LEMON_SQUEEZY_MONTHLY_VARIANT_ID',
+        );
       case SubscriptionPlan.YEARLY:
         return this.getRequiredVariantConfig('LEMON_SQUEEZY_YEARLY_VARIANT_ID');
       case SubscriptionPlan.LIFETIME:
-        return this.getRequiredVariantConfig('LEMON_SQUEEZY_LIFETIME_VARIANT_ID');
+        return this.getRequiredVariantConfig(
+          'LEMON_SQUEEZY_LIFETIME_VARIANT_ID',
+        );
       default:
         throw new BadRequestException('Invalid plan');
     }
@@ -582,15 +855,24 @@ export class SubscriptionService {
   private mapVariantIdToPlan(variantId: string): SubscriptionPlan | undefined {
     const normalized = String(variantId);
 
-    if (normalized === this.configService.get<string>('LEMON_SQUEEZY_MONTHLY_VARIANT_ID')) {
+    if (
+      normalized ===
+      this.configService.get<string>('LEMON_SQUEEZY_MONTHLY_VARIANT_ID')
+    ) {
       return SubscriptionPlan.MONTHLY;
     }
 
-    if (normalized === this.configService.get<string>('LEMON_SQUEEZY_YEARLY_VARIANT_ID')) {
+    if (
+      normalized ===
+      this.configService.get<string>('LEMON_SQUEEZY_YEARLY_VARIANT_ID')
+    ) {
       return SubscriptionPlan.YEARLY;
     }
 
-    if (normalized === this.configService.get<string>('LEMON_SQUEEZY_LIFETIME_VARIANT_ID')) {
+    if (
+      normalized ===
+      this.configService.get<string>('LEMON_SQUEEZY_LIFETIME_VARIANT_ID')
+    ) {
       return SubscriptionPlan.LIFETIME;
     }
 
@@ -661,10 +943,12 @@ export class SubscriptionService {
     lemonSubscriptionId: string,
   ): Promise<void> {
     try {
-      const remoteSubscription = await this.lemonSqueezyService.getSubscription(
-        lemonSubscriptionId,
-      );
-      const attributes = (remoteSubscription.attributes || {}) as Record<string, any>;
+      const remoteSubscription =
+        await this.lemonSqueezyService.getSubscription(lemonSubscriptionId);
+      const attributes = (remoteSubscription.attributes || {}) as Record<
+        string,
+        any
+      >;
 
       const currentPeriodStart =
         this.parseDate(attributes.created_at) || new Date();
@@ -685,19 +969,26 @@ export class SubscriptionService {
   }
 
   private extractUserId(event: any): string | undefined {
-    const customData = event?.meta?.custom_data || event?.data?.attributes?.custom_data || {};
+    const customData =
+      event?.meta?.custom_data || event?.data?.attributes?.custom_data || {};
     const userId = customData.userId || customData.user_id;
     return userId ? String(userId) : undefined;
   }
 
   private extractPlanId(event: any): string | undefined {
-    const customData = event?.meta?.custom_data || event?.data?.attributes?.custom_data || {};
+    const customData =
+      event?.meta?.custom_data || event?.data?.attributes?.custom_data || {};
     const planId = customData.planId || customData.plan_id;
     return planId ? String(planId) : undefined;
   }
 
-  private extractPlanIdFromCustomData(orderAttributes: Record<string, any>): string | undefined {
-    const customData = orderAttributes.custom_data || orderAttributes.checkout_data?.custom || {};
+  private extractPlanIdFromCustomData(
+    orderAttributes: Record<string, any>,
+  ): string | undefined {
+    const customData =
+      orderAttributes.custom_data ||
+      orderAttributes.checkout_data?.custom ||
+      {};
     const planId = customData.planId || customData.plan_id;
     return planId ? String(planId) : undefined;
   }
@@ -722,13 +1013,17 @@ export class SubscriptionService {
     }
   }
 
-  private extractVariantId(orderAttributes: Record<string, any>): string | undefined {
+  private extractVariantId(
+    orderAttributes: Record<string, any>,
+  ): string | undefined {
     const firstOrderItem = orderAttributes.first_order_item || {};
     const variantId = firstOrderItem.variant_id || firstOrderItem.variantId;
     return variantId ? String(variantId) : undefined;
   }
 
-  private extractLemonSubscriptionId(orderAttributes: Record<string, any>): string | undefined {
+  private extractLemonSubscriptionId(
+    orderAttributes: Record<string, any>,
+  ): string | undefined {
     const firstOrderItem = orderAttributes.first_order_item || {};
     const subscriptionId =
       firstOrderItem.subscription_id ||
@@ -753,7 +1048,7 @@ export class SubscriptionService {
   }
 
   private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   private async countUserRoutines(userId: string): Promise<number> {
@@ -768,14 +1063,12 @@ export class SubscriptionService {
     return await this.customMealRepository.count({ where: { userId } });
   }
 
-  private mapToDto(
-    subscription: SubscriptionEntity,
-  ): SubscriptionResponseDto {
+  private mapToDto(subscription: SubscriptionEntity): SubscriptionResponseDto {
     return {
       id: subscription.id,
       userId: subscription.userId,
-      stripeCustomerId: subscription.stripeCustomerId,
-      stripeSubscriptionId: subscription.stripeSubscriptionId,
+      lemonCustomerId: subscription.lemonCustomerId,
+      lemonSubscriptionId: subscription.lemonSubscriptionId,
       plan: subscription.plan,
       status: subscription.status,
       currentPeriodStart: subscription.currentPeriodStart,

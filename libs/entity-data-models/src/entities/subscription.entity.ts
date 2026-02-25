@@ -25,13 +25,14 @@ export class SubscriptionEntity {
   @JoinColumn({ name: 'userId', referencedColumnName: 'id' })
   user!: UserEntity;
 
-  // Stripe identifiers
+  // Lemon Squeezy identifiers
   @Column({ nullable: true })
   @Index()
-  stripeCustomerId?: string;
+  lemonCustomerId?: string;
 
   @Column({ nullable: true })
-  stripeSubscriptionId?: string; // null para lifetime
+  @Index()
+  lemonSubscriptionId?: string; // null para lifetime
 
   // Subscription details
   @Column({
