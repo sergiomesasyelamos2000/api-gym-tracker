@@ -1,6 +1,7 @@
 # Base stage
 FROM node:20-alpine AS base
 WORKDIR /usr/src/app
+ENV HUSKY=0
 
 # Install netcat for database health checks
 RUN apk add --no-cache netcat-openbsd
