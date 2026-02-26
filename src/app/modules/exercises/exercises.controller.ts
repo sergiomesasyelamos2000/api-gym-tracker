@@ -1,18 +1,27 @@
 import { CreateExerciseDto } from '@app/entity-data-models';
+import { CACHE_MANAGER, CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
   Get,
+  Inject,
   Post,
   Query,
   UseInterceptors,
 } from '@nestjs/common';
-import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { ExercisesService } from './exercises.service';
 
 @Controller('exercises')
 export class ExercisesController {
-  constructor(private readonly exercisesService: ExercisesService) {}
+  constructor(
+    private readonly exercisesService: ExercisesService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) {}
+
+  private async invalidateExercisesCache(): Promise<void> {
+    await this.cacheManager.clear();
+  }
 
   // ==================== ENDPOINTS PÚBLICOS ====================
 
@@ -60,24 +69,32 @@ export class ExercisesController {
   }
 
   @Post()
-  createCustom(@Body() dto: CreateExerciseDto) {
-    return this.exercisesService.createCustom(dto);
+  async createCustom(@Body() dto: CreateExerciseDto) {
+    const exercise = await this.exercisesService.createCustom(dto);
+    await this.invalidateExercisesCache();
+    return exercise;
   }
 
   // ==================== ENDPOINTS DE SINCRONIZACIÓN ====================
 
   @Post('sync/bodyparts')
-  syncBodyParts() {
-    return this.exercisesService.syncBodyParts();
+  async syncBodyParts() {
+    const result = await this.exercisesService.syncBodyParts();
+    await this.invalidateExercisesCache();
+    return result;
   }
 
   @Post('sync/equipment')
-  syncEquipment() {
-    return this.exercisesService.syncEquipment();
+  async syncEquipment() {
+    const result = await this.exercisesService.syncEquipment();
+    await this.invalidateExercisesCache();
+    return result;
   }
 
   @Post('sync/exercise-types')
-  syncExerciseTypes() {
-    return this.exercisesService.syncExerciseTypes();
+  async syncExerciseTypes() {
+    const result = await this.exercisesService.syncExerciseTypes();
+    await this.invalidateExercisesCache();
+    return result;
   }
 }
