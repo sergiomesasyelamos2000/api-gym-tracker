@@ -60,4 +60,3 @@ credentials/
 *.json
 !package.json
 !tsconfig.json
-!railway.json

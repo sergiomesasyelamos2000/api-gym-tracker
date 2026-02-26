@@ -515,61 +515,7 @@ ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
 
 ## 🚢 Production Deployment
 
-### Railway Deployment (Recommended)
-
-1. **Prepare repository**
-
-   ```bash
-   # Ensure these files are committed
-   git add railway.json Dockerfile .env.example
-   git commit -m "chore: add railway deployment configuration"
-   git push
-   ```
-
-2. **Create project in Railway**
-   - Go to Railway dashboard.
-   - Click **New Project** -> **Deploy from GitHub repo**.
-   - Select this backend repository.
-
-3. **Provision PostgreSQL**
-   - Inside the project, click **New** -> **Database** -> **PostgreSQL**.
-   - Railway will create DB variables. Keep `DATABASE_URL` in the API service.
-
-4. **Set API service variables**
-   - In the backend service, open **Variables**.
-   - Add required values from `.env.example`:
-     - `NODE_ENV=production`
-     - `JWT_SECRET`
-     - `STRIPE_SECRET_KEY`
-     - `STRIPE_WEBHOOK_SECRET`
-     - `STRIPE_MONTHLY_PRICE_ID`
-     - `STRIPE_YEARLY_PRICE_ID`
-     - `STRIPE_LIFETIME_PRICE_ID`
-     - `FRONTEND_URL`
-     - `CORS_ORIGINS`
-     - `NODE_AUTH_TOKEN` (GitHub token with access to `@sergiomesasyelamos2000/shared` package)
-   - If you use password reset in production, also set:
-     - `BREVO_API_KEY`
-     - `BREVO_FROM_EMAIL`
-   - Keep `DATABASE_SSL=true` for Railway Postgres.
-
-5. **Trigger deployment**
-   - Railway will auto-deploy after push.
-   - Build uses `Dockerfile`.
-   - Runtime command is `npm run start:prod:migrate` (runs migrations and starts API).
-
-6. **Validate deployment**
-   - Open service **Deployments** logs and confirm:
-     - migrations ran successfully
-     - Nest app is listening on `0.0.0.0:$PORT`
-   - Test health endpoint:
-     - `GET https://<your-service-domain>/health` -> should return `{"status":"ok",...}`
-
-7. **Configure custom domain (optional)**
-   - In service **Settings** -> **Domains**, add your custom domain.
-   - Update `FRONTEND_URL` and `CORS_ORIGINS` if needed.
-
-### Docker Build (Alternative)
+### Docker Build
 
 ```bash
 # Build production image
@@ -589,10 +535,11 @@ docker run -d \
 - [ ] Set `NODE_ENV=production`
 - [ ] Use strong `JWT_SECRET`
 - [ ] Configure production database credentials
+- [ ] Set up SSL/TLS certificates
 - [ ] Configure CORS for production domains
-- [ ] Confirm `DATABASE_SSL=true` in managed Postgres
-- [ ] Ensure `NODE_AUTH_TOKEN` is available for build
+- [ ] Run migrations: `npm run migration:run`
 - [ ] Set up database backups
+- [ ] Configure Redis persistence (if needed)
 - [ ] Set up monitoring and alerting
 - [ ] Review and adjust resource limits
 - [ ] Enable rate limiting
