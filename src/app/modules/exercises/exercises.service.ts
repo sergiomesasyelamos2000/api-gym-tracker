@@ -54,6 +54,9 @@ interface ExerciseSearchParams {
 export class ExercisesService implements OnModuleInit {
   private readonly logger = new Logger(ExercisesService.name);
   private readonly translator: translate.Translate;
+  private readonly strictTranslation =
+    process.env.TRANSLATION_STRICT === 'true' ||
+    process.env.TRANSLATION_STRICT === '1';
 
   // Diccionario de traducciones personalizadas
   private readonly customTranslations: { [key: string]: string } = {
@@ -118,10 +121,39 @@ export class ExercisesService implements OnModuleInit {
     public exerciseTypeRepository: Repository<ExerciseTypeEntity>,
     private readonly httpService: HttpService,
   ) {
-    this.translator = new translate.Translate({
-      projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
-      keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-    });
+    const credentialsJson = process.env.GOOGLE_CREDENTIALS_JSON;
+    const keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    const explicitProjectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
+
+    if (credentialsJson) {
+      try {
+        const parsedCredentials = JSON.parse(credentialsJson);
+        if (typeof parsedCredentials.private_key === 'string') {
+          parsedCredentials.private_key = parsedCredentials.private_key.replace(
+            /\\n/g,
+            '\n',
+          );
+        }
+
+        this.translator = new translate.Translate({
+          projectId: explicitProjectId || parsedCredentials.project_id,
+          credentials: parsedCredentials,
+        });
+      } catch (error) {
+        this.logger.error(
+          'GOOGLE_CREDENTIALS_JSON inválido. Se usará GOOGLE_APPLICATION_CREDENTIALS si existe.',
+        );
+        this.translator = new translate.Translate({
+          projectId: explicitProjectId,
+          keyFilename,
+        });
+      }
+    } else {
+      this.translator = new translate.Translate({
+        projectId: explicitProjectId,
+        keyFilename,
+      });
+    }
   }
 
   async onModuleInit() {
@@ -782,12 +814,15 @@ export class ExercisesService implements OnModuleInit {
 
           // Si no, usar Google Translate
           try {
-            const [translation] = await this.translator.translate(text, {
-              from: 'en',
-              to: 'es',
-            });
+            const translation = await this.translateWithRetry(text);
             return this.capitalizeFirst(translation);
           } catch (error) {
+            this.logger.warn(
+              `Fallback de traduccion para "${text}": ${error.message}`,
+            );
+            if (this.strictTranslation) {
+              throw error;
+            }
             return this.translateByDictionaryFallback(text);
           }
         }),
@@ -1293,17 +1328,45 @@ export class ExercisesService implements OnModuleInit {
       }
 
       // Usar Google Translate
-      const [translation] = await this.translator.translate(text, {
-        from: 'en',
-        to: 'es',
-      });
+      const translation = await this.translateWithRetry(text);
 
       // Normalizar: primera mayúscula, resto minúsculas
       return this.normalizeText(translation);
     } catch (error) {
       this.logger.warn(`Error traduciendo "${text}": ${error.message}`);
+      if (this.strictTranslation) {
+        throw error;
+      }
       return this.translateByDictionaryFallback(text);
     }
+  }
+
+  private async translateWithRetry(text: string): Promise<string> {
+    const maxRetries = 3;
+    let attempt = 0;
+    let lastError: unknown;
+
+    while (attempt < maxRetries) {
+      try {
+        const [translation] = await this.translator.translate(text, {
+          from: 'en',
+          to: 'es',
+        });
+        return translation;
+      } catch (error) {
+        lastError = error;
+        attempt += 1;
+        if (attempt >= maxRetries) break;
+        const delayMs = 500 * attempt;
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+
+    throw new Error(
+      `Google Translate failed after ${maxRetries} attempts: ${
+        lastError instanceof Error ? lastError.message : String(lastError)
+      }`,
+    );
   }
 
   /**

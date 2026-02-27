@@ -97,4 +97,11 @@ export class ExercisesController {
     await this.invalidateExercisesCache();
     return result;
   }
+
+  @Post('sync/all')
+  async syncAll() {
+    const result = await this.exercisesService.syncWithExerciseDB();
+    await this.invalidateExercisesCache();
+    return result;
+  }
 }
