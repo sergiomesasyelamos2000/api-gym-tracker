@@ -13,6 +13,15 @@ const getRequiredEnv = (key: string): string => {
   return value;
 };
 
+const databaseUrl = process.env.DATABASE_URL || '';
+const databaseUser =
+  process.env.DATABASE_USER || (databaseUrl ? '' : getRequiredEnv('DATABASE_USER'));
+const databasePassword =
+  process.env.DATABASE_PASSWORD ||
+  (databaseUrl ? '' : getRequiredEnv('DATABASE_PASSWORD'));
+const databaseName =
+  process.env.DATABASE_NAME || (databaseUrl ? '' : getRequiredEnv('DATABASE_NAME'));
+
 export const ENV = {
   // API Keys
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
@@ -33,11 +42,12 @@ export const ENV = {
   FRONTEND_URL: process.env.FRONTEND_URL || '',
 
   // Database
+  DATABASE_URL: databaseUrl,
   DATABASE_HOST: process.env.DATABASE_HOST || 'localhost',
   DATABASE_PORT: parseInt(process.env.DATABASE_PORT || '5432', 10),
-  DATABASE_USER: getRequiredEnv('DATABASE_USER'),
-  DATABASE_PASSWORD: getRequiredEnv('DATABASE_PASSWORD'),
-  DATABASE_NAME: getRequiredEnv('DATABASE_NAME'),
+  DATABASE_USER: databaseUser,
+  DATABASE_PASSWORD: databasePassword,
+  DATABASE_NAME: databaseName,
 
   // Cloudinary
   CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME || '',
