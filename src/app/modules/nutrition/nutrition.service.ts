@@ -7,7 +7,13 @@ import {
 } from '@app/entity-data-models';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { HttpService } from '@nestjs/axios';
-import { Injectable, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  BadRequestException,
+  HttpException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ENV } from '../../../environments/environment';
@@ -185,6 +191,11 @@ export class NutritionService {
         model: response.model,
       };
     } catch (error) {
+      // Preserve HTTP-level errors (limit reached, validation, etc.)
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       console.error('Error en chat:', error);
       throw new Error(
         'No se pudo procesar la solicitud. Por favor, inténtalo más tarde.',
