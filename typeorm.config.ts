@@ -13,13 +13,17 @@ config();
 const isProduction = process.env.NODE_ENV === 'production';
 const useSsl =
   (process.env.DATABASE_SSL || (isProduction ? 'true' : 'false')) === 'true';
+const sanitizeCompact = (value?: string) => value?.replace(/\s+/g, '') || '';
+
+const databaseUrl = sanitizeCompact(process.env.DATABASE_URL);
+const databaseHost = sanitizeCompact(process.env.DATABASE_HOST) || 'localhost';
 
 export default new DataSource({
   type: 'postgres',
-  ...(process.env.DATABASE_URL
-    ? { url: process.env.DATABASE_URL }
+  ...(databaseUrl
+    ? { url: databaseUrl }
     : {
-        host: process.env.DATABASE_HOST || 'localhost',
+        host: databaseHost,
         port: parseInt(process.env.DATABASE_PORT || '5432', 10),
         username: process.env.DATABASE_USER || 'postgres',
         password: process.env.DATABASE_PASSWORD || 'postgres',
