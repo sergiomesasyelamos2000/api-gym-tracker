@@ -13,10 +13,38 @@ config();
 const isProduction = process.env.NODE_ENV === 'production';
 const useSsl =
   (process.env.DATABASE_SSL || (isProduction ? 'true' : 'false')) === 'true';
-const sanitizeCompact = (value?: string) => value?.replace(/\s+/g, '') || '';
+const sanitizeCompact = (value?: string) =>
+  (value || '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, '');
 
-const databaseUrl = sanitizeCompact(process.env.DATABASE_URL);
+const normalizeDatabaseUrl = (value?: string) => {
+  const sanitized = sanitizeCompact(value);
+  if (!sanitized) {
+    return '';
+  }
+  try {
+    return new URL(sanitized).toString();
+  } catch {
+    return sanitized;
+  }
+};
+
+const databaseUrl = normalizeDatabaseUrl(process.env.DATABASE_URL);
 const databaseHost = sanitizeCompact(process.env.DATABASE_HOST) || 'localhost';
+const databaseHostFromUrl = databaseUrl
+  ? (() => {
+      try {
+        return new URL(databaseUrl).hostname;
+      } catch {
+        return '<invalid-database-url>';
+      }
+    })()
+  : databaseHost;
+
+console.log(`[typeorm] connecting to host: ${databaseHostFromUrl}`);
 
 export default new DataSource({
   type: 'postgres',

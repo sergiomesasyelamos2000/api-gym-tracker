@@ -56,8 +56,24 @@ import { ExportService } from './services/export.service';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
         const isProduction = configService.get<string>('NODE_ENV') === 'production';
-        const sanitizeCompact = (value?: string) => value?.replace(/\s+/g, '') || '';
-        const databaseUrl = sanitizeCompact(configService.get<string>('DATABASE_URL'));
+        const sanitizeCompact = (value?: string) =>
+          (value || '')
+            .trim()
+            .replace(/^['"]|['"]$/g, '')
+            .replace(/[\u200B-\u200D\uFEFF]/g, '')
+            .replace(/\s+/g, '');
+        const normalizeDatabaseUrl = (value?: string) => {
+          const sanitized = sanitizeCompact(value);
+          if (!sanitized) {
+            return '';
+          }
+          try {
+            return new URL(sanitized).toString();
+          } catch {
+            return sanitized;
+          }
+        };
+        const databaseUrl = normalizeDatabaseUrl(configService.get<string>('DATABASE_URL'));
         const databaseHost =
           sanitizeCompact(configService.get<string>('DATABASE_HOST')) || 'localhost';
         const databaseSsl =
