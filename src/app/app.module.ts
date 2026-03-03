@@ -68,7 +68,14 @@ import { ExportService } from './services/export.service';
             return '';
           }
           try {
-            return new URL(sanitized).toString();
+            const parsed = new URL(sanitized);
+            // SSL is configured explicitly in TypeORM options.
+            // Removing sslmode avoids parser defaults that can force cert validation.
+            parsed.searchParams.delete('sslmode');
+            parsed.searchParams.delete('sslcert');
+            parsed.searchParams.delete('sslkey');
+            parsed.searchParams.delete('sslrootcert');
+            return parsed.toString();
           } catch {
             return sanitized;
           }

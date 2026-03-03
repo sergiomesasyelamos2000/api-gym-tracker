@@ -26,7 +26,14 @@ const normalizeDatabaseUrl = (value?: string) => {
     return '';
   }
   try {
-    return new URL(sanitized).toString();
+    const parsed = new URL(sanitized);
+    // TypeORM/pg already receives SSL config via `ssl` option below.
+    // Keeping sslmode in URL can override TLS behavior unexpectedly.
+    parsed.searchParams.delete('sslmode');
+    parsed.searchParams.delete('sslcert');
+    parsed.searchParams.delete('sslkey');
+    parsed.searchParams.delete('sslrootcert');
+    return parsed.toString();
   } catch {
     return sanitized;
   }
