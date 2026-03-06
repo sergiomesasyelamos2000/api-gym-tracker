@@ -304,7 +304,7 @@ export class AuthService {
 
     const user = await this.userRepository.findOne({ where: { email } });
 
-    if (!user || !user.password) {
+    if (!user) {
       return {
         message:
           'Si el email existe, recibirás un código para restablecer tu contraseña.',
@@ -332,11 +332,21 @@ export class AuthService {
     user.resetPasswordRequestedAt = new Date(now);
 
     await this.userRepository.save(user);
-    await this.emailService.sendPasswordResetCode(
-      email,
-      code,
-      PASSWORD_RESET_CODE_TTL_MINUTES,
-    );
+    try {
+      await this.emailService.sendPasswordResetCode(
+        email,
+        code,
+        PASSWORD_RESET_CODE_TTL_MINUTES,
+      );
+    } catch (error) {
+      // If email delivery fails, clear reset state so the user can retry immediately.
+      user.resetPasswordTokenHash = undefined;
+      user.resetPasswordTokenExpiresAt = undefined;
+      user.resetPasswordAttempts = 0;
+      user.resetPasswordRequestedAt = undefined;
+      await this.userRepository.save(user);
+      throw error;
+    }
 
     return {
       message:
