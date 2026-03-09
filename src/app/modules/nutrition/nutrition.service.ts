@@ -24,10 +24,21 @@ import { SubscriptionService } from '../subscription/subscription.service';
 import { ProfileService } from './services/profile.service';
 
 const FREE_TIER_TOTAL_LIMIT = 10;
+const USER_CONTEXT_CACHE_TTL_MS = 60 * 1000;
+const MAX_HISTORY_MESSAGES = 12;
+const MAX_HISTORY_MESSAGE_CHARS = 700;
+const MAX_ROUTINES_IN_CONTEXT = 6;
+const MAX_RECENT_SESSIONS_IN_CONTEXT = 3;
+
+type CachedUserContext = {
+  expiresAt: number;
+  value: UserContext;
+};
 
 @Injectable()
 export class NutritionService {
   private readonly logger = new Logger(NutritionService.name);
+  private readonly userContextCache = new Map<string, CachedUserContext>();
 
   constructor(
     private readonly httpService: HttpService,
@@ -98,15 +109,23 @@ export class NutritionService {
 
       // Add previous messages from history
       if (history && history.length > 0) {
-        history.forEach(msg => {
+        history
+          .slice(-MAX_HISTORY_MESSAGES)
+          .forEach(msg => {
+            const normalizedContent = (msg.content || '')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .slice(0, MAX_HISTORY_MESSAGE_CHARS);
+            if (!normalizedContent) return;
+
           messages.push({
             role:
               msg.role === 'bot'
                 ? 'assistant'
                 : (msg.role as ChatMessage['role']),
-            content: msg.content,
+              content: normalizedContent,
           });
-        });
+          });
       }
 
       // Add current user message
@@ -119,60 +138,7 @@ export class NutritionService {
       let userContext: UserContext | undefined = undefined;
       if (userId) {
         try {
-          // Get nutrition profile
-          const profile = await this.profileService.getUserProfile(userId);
-
-          // Get training data
-          const routines = await this.routineService.findAll(userId);
-          const allSessions = await this.routineService.getAllSessions(userId);
-          const stats = await this.routineService.getGlobalStats(userId);
-
-          userContext = {
-            userId,
-            profile: {
-              age: profile.anthropometrics?.age,
-              gender: profile.anthropometrics?.gender,
-              weight: profile.anthropometrics?.weight,
-              height: profile.anthropometrics?.height,
-              activityLevel: profile.anthropometrics?.activityLevel,
-              goals: {
-                weightGoal: profile.goals?.weightGoal,
-                targetWeight: profile.goals?.targetWeight,
-                dailyCalories: profile.macroGoals?.dailyCalories,
-                protein: profile.macroGoals?.protein,
-                carbs: profile.macroGoals?.carbs,
-                fat: profile.macroGoals?.fat,
-              },
-            },
-            training: {
-              routines: routines.map(r => ({
-                id: r.id,
-                name: r.title,
-                description: undefined, // Description does not exist on RoutineEntity
-                exerciseCount: r.routineExercises?.length || 0,
-              })),
-              recentSessions: allSessions.slice(0, 5).map(s => ({
-                date: new Date(s.createdAt).toLocaleDateString('es-ES'),
-                routineName: s.routine?.title || 'Rutina desconocida',
-                exercisesCompleted: s.exercises?.length || 0,
-              })),
-              stats: {
-                totalSessions: allSessions.length || 0,
-                totalExercises: stats.completedSets || 0, // Using completedSets as proxy for volume
-                averageSessionsPerWeek:
-                  allSessions.length > 0
-                    ? parseFloat((allSessions.length / 4).toFixed(1)) // Approx last month
-                    : 0,
-                lastWorkoutDate:
-                  allSessions.length > 0
-                    ? new Date(allSessions[0].createdAt).toLocaleDateString(
-                        'es-ES',
-                      )
-                    : undefined,
-              },
-              schedule: this.calculateSchedule(allSessions),
-            },
-          };
+          userContext = await this.getUserContext(userId);
         } catch (error) {
           // User profile or training data not found, continue without full context
         }
@@ -201,6 +167,75 @@ export class NutritionService {
         'No se pudo procesar la solicitud. Por favor, inténtalo más tarde.',
       );
     }
+  }
+
+  private async getUserContext(userId: string): Promise<UserContext | undefined> {
+    const now = Date.now();
+    const cached = this.userContextCache.get(userId);
+    if (cached && cached.expiresAt > now) {
+      return cached.value;
+    }
+
+    const [profile, routines, allSessions, stats] = await Promise.all([
+      this.profileService.getUserProfile(userId),
+      this.routineService.findAll(userId),
+      this.routineService.getAllSessions(userId),
+      this.routineService.getGlobalStats(userId),
+    ]);
+
+    const context: UserContext = {
+      userId,
+      profile: {
+        age: profile.anthropometrics?.age,
+        gender: profile.anthropometrics?.gender,
+        weight: profile.anthropometrics?.weight,
+        height: profile.anthropometrics?.height,
+        activityLevel: profile.anthropometrics?.activityLevel,
+        goals: {
+          weightGoal: profile.goals?.weightGoal,
+          targetWeight: profile.goals?.targetWeight,
+          dailyCalories: profile.macroGoals?.dailyCalories,
+          protein: profile.macroGoals?.protein,
+          carbs: profile.macroGoals?.carbs,
+          fat: profile.macroGoals?.fat,
+        },
+      },
+      training: {
+        routines: routines.slice(0, MAX_ROUTINES_IN_CONTEXT).map(r => ({
+          id: r.id,
+          name: r.title,
+          description: undefined,
+          exerciseCount: r.routineExercises?.length || 0,
+        })),
+        recentSessions: allSessions
+          .slice(0, MAX_RECENT_SESSIONS_IN_CONTEXT)
+          .map(s => ({
+            date: new Date(s.createdAt).toLocaleDateString('es-ES'),
+            routineName: s.routine?.title || 'Rutina desconocida',
+            exercisesCompleted: s.exercises?.length || 0,
+          })),
+        stats: {
+          totalSessions: allSessions.length || 0,
+          totalExercises: stats.completedSets || 0,
+          averageSessionsPerWeek:
+            allSessions.length > 0
+              ? parseFloat((allSessions.length / 4).toFixed(1))
+              : 0,
+          lastWorkoutDate:
+            allSessions.length > 0
+              ? new Date(allSessions[0].createdAt).toLocaleDateString('es-ES')
+              : undefined,
+        },
+        schedule: this.calculateSchedule(allSessions),
+      },
+    };
+
+    this.userContextCache.set(userId, {
+      value: context,
+      expiresAt: now + USER_CONTEXT_CACHE_TTL_MS,
+    });
+
+    return context;
   }
 
   // Recognition de alimentos

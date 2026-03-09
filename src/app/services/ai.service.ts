@@ -3,6 +3,9 @@ import { GeminiProvider } from './gemini.provider';
 import { GroqProvider } from './groq.provider';
 import { ChatMessage, ChatResponse, UserContext } from './ai-provider.base';
 
+const PRIMARY_PROVIDER_TIMEOUT_MS = 8000;
+const FALLBACK_PROVIDER_TIMEOUT_MS = 6000;
+
 @Injectable()
 export class AIService {
   private readonly logger = new Logger(AIService.name);
@@ -23,22 +26,32 @@ export class AIService {
     // Try Gemini first (primary provider)
     try {
       this.logger.log('Attempting chat with Gemini...');
-      const response = await this.geminiProvider.chat(messages, userContext);
+      const response = await this.withTimeout(
+        this.geminiProvider.chat(messages, userContext),
+        'Gemini',
+        PRIMARY_PROVIDER_TIMEOUT_MS,
+      );
       this.logger.log('✅ Gemini response successful');
       return response;
-    } catch (geminiError) {
+    } catch (geminiError: unknown) {
+      const geminiMessage = this.getErrorMessage(geminiError);
       this.logger.warn(
-        `⚠️ Gemini failed: ${geminiError.message}. Falling back to Groq...`,
+        `⚠️ Gemini failed: ${geminiMessage}. Falling back to Groq...`,
       );
 
       // Fallback to Groq
       try {
-        const response = await this.groqProvider.chat(messages, userContext);
+        const response = await this.withTimeout(
+          this.groqProvider.chat(messages, userContext),
+          'Groq',
+          FALLBACK_PROVIDER_TIMEOUT_MS,
+        );
         this.logger.log('✅ Groq response successful (fallback)');
         return response;
-      } catch (groqError) {
+      } catch (groqError: unknown) {
+        const groqMessage = this.getErrorMessage(groqError);
         this.logger.error(
-          `❌ Both providers failed. Gemini: ${geminiError.message}, Groq: ${groqError.message}`,
+          `❌ Both providers failed. Gemini: ${geminiMessage}, Groq: ${groqMessage}`,
         );
         throw new Error(
           'No se pudo procesar tu solicitud. Por favor, inténtalo más tarde.',
@@ -60,5 +73,34 @@ export class AIService {
     ]);
 
     return { gemini, groq };
+  }
+
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    providerName: string,
+    timeoutMs: number,
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(`${providerName} timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      promise
+        .then(value => {
+          clearTimeout(timeout);
+          resolve(value);
+        })
+        .catch(error => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+    });
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return String(error);
   }
 }
