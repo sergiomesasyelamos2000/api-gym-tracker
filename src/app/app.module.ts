@@ -23,6 +23,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { APP_GUARD } from '@nestjs/core';
+import {
+  ThrottlerGuard,
+  ThrottlerModule,
+  ThrottlerModuleOptions,
+} from '@nestjs/throttler';
 import { join } from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -41,6 +47,18 @@ import { ExportService } from './services/export.service';
       isGlobal: true,
       envFilePath: '.env', // Ruta al archivo .env
       cache: true,
+    }),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService): ThrottlerModuleOptions => ({
+        throttlers: [
+          {
+            limit: Number(configService.get<string>('RATE_LIMIT_LIMIT', '30')),
+            ttl: Number(configService.get<string>('RATE_LIMIT_TTL', '60')),
+          },
+        ],
+      }),
     }),
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'public'),
@@ -148,7 +166,14 @@ import { ExportService } from './services/export.service';
     SubscriptionModule,
   ],
   controllers: [AppController, ExportController],
-  providers: [AppService, ExportService],
+  providers: [
+    AppService,
+    ExportService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule implements OnApplicationBootstrap {
   constructor() {}
