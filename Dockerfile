@@ -2,8 +2,8 @@
 FROM node:20-alpine AS base
 WORKDIR /usr/src/app
 
-# Install netcat for database health checks
-RUN apk add --no-cache netcat-openbsd
+# Install netcat and psql client for database health checks/seeding
+RUN apk add --no-cache netcat-openbsd postgresql-client
 
 # Instalar pnpm o usar npm? Usaremos npm por defecto ya que ví package-lock.json
 COPY package*.json ./

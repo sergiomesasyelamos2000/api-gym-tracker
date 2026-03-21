@@ -50,60 +50,6 @@ interface ExerciseSearchParams {
   muscle?: string;
 }
 
-const POPULAR_EXERCISE_PATTERNS: Array<{ pattern: string; score: number }> = [
-  { pattern: 'bench press', score: 120 },
-  { pattern: 'press banca', score: 120 },
-  { pattern: 'squat', score: 118 },
-  { pattern: 'sentadilla', score: 118 },
-  { pattern: 'deadlift', score: 116 },
-  { pattern: 'peso muerto', score: 116 },
-  { pattern: 'lat pulldown', score: 112 },
-  { pattern: 'jalon al pecho', score: 112 },
-  { pattern: 'pull up', score: 110 },
-  { pattern: 'pull-up', score: 110 },
-  { pattern: 'dominadas', score: 110 },
-  { pattern: 'row', score: 108 },
-  { pattern: 'remo', score: 108 },
-  { pattern: 'overhead press', score: 106 },
-  { pattern: 'shoulder press', score: 106 },
-  { pattern: 'military press', score: 104 },
-  { pattern: 'press militar', score: 104 },
-  { pattern: 'leg press', score: 102 },
-  { pattern: 'prensa', score: 102 },
-  { pattern: 'lunge', score: 100 },
-  { pattern: 'zancada', score: 100 },
-  { pattern: 'concentration curl', score: 100 },
-  { pattern: 'triangle push-up', score: 99 },
-  { pattern: 'diamond push-up', score: 99 },
-  { pattern: 'hip thrust', score: 98 },
-  { pattern: 'empuje de cadera', score: 98 },
-  { pattern: 'rdl', score: 97 },
-  { pattern: 'romanian deadlift', score: 97 },
-  { pattern: 'leg curl', score: 95 },
-  { pattern: 'curl femoral', score: 95 },
-  { pattern: 'leg extension', score: 94 },
-  { pattern: 'extension de cuadriceps', score: 94 },
-  { pattern: 'kickback', score: 93 },
-  { pattern: 'calf raise', score: 92 },
-  { pattern: 'elevacion de talones', score: 92 },
-  { pattern: 'bicep curl', score: 90 },
-  { pattern: 'barbell curl', score: 90 },
-  { pattern: 'curl biceps', score: 90 },
-  { pattern: 'tricep pushdown', score: 89 },
-  { pattern: 'triceps pushdown', score: 89 },
-  { pattern: 'dips', score: 88 },
-  { pattern: 'fondos', score: 88 },
-  { pattern: 'pec deck', score: 86 },
-  { pattern: 'cable crossover', score: 85 },
-  { pattern: 'fly', score: 84 },
-  { pattern: 'aperturas', score: 84 },
-  { pattern: 'crunch', score: 83 },
-  { pattern: 'abdominal', score: 83 },
-  { pattern: 'plank', score: 82 },
-  { pattern: 'plancha', score: 82 },
-  { pattern: 'ab rollout', score: 81 },
-];
-
 @Injectable()
 export class ExercisesService implements OnModuleInit {
   private readonly logger = new Logger(ExercisesService.name);
@@ -265,7 +211,7 @@ export class ExercisesService implements OnModuleInit {
   // ==================== MÉTODOS PRINCIPALES ====================
 
   async findAll(): Promise<ExerciseEntity[]> {
-    const exercises = await this.exerciseRepository
+    return this.exerciseRepository
       .createQueryBuilder('exercise')
       .select([
         'exercise.id',
@@ -278,10 +224,9 @@ export class ExercisesService implements OnModuleInit {
         'exercise.targetMuscles',
         'exercise.secondaryMuscles',
       ])
-      .orderBy('exercise.name', 'ASC')
+      .orderBy('exercise.popularity', 'DESC')
+      .addOrderBy('exercise.name', 'ASC')
       .getMany();
-
-    return this.sortByPopularity(exercises);
   }
 
   async search(params: ExerciseSearchParams): Promise<ExerciseEntity[]> {
@@ -298,7 +243,8 @@ export class ExercisesService implements OnModuleInit {
         'exercise.targetMuscles',
         'exercise.secondaryMuscles',
       ])
-      .orderBy('exercise.name', 'ASC');
+      .orderBy('exercise.popularity', 'DESC')
+      .addOrderBy('exercise.name', 'ASC');
 
     const normalizedName = params.name?.trim().toLowerCase();
     const normalizedEquipment = params.equipment?.trim().toLowerCase();
@@ -383,36 +329,7 @@ export class ExercisesService implements OnModuleInit {
       );
     }
 
-    const exercises = await query.getMany();
-    return this.sortByPopularity(exercises);
-  }
-
-  private normalizeExerciseName(value: string): string {
-    return value
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9\s-]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  private getPopularityScore(exercise: ExerciseEntity): number {
-    const normalizedName = this.normalizeExerciseName(exercise.name || '');
-
-    return POPULAR_EXERCISE_PATTERNS.reduce((total, { pattern, score }) => {
-      return normalizedName.includes(pattern) ? total + score : total;
-    }, 0);
-  }
-
-  private sortByPopularity(exercises: ExerciseEntity[]): ExerciseEntity[] {
-    return [...exercises].sort((a, b) => {
-      const scoreDiff = this.getPopularityScore(b) - this.getPopularityScore(a);
-      if (scoreDiff !== 0) return scoreDiff;
-      return (a.name || '').localeCompare(b.name || '', 'es', {
-        sensitivity: 'base',
-      });
-    });
+    return query.getMany();
   }
 
   async findAllEquipment(): Promise<EquipmentEntity[]> {

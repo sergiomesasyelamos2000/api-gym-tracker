@@ -58,6 +58,9 @@ export class ExerciseEntity {
   @Column('simple-array', { nullable: true })
   relatedExerciseIds?: string[];
 
+  @Column({ type: 'int', default: 0 })
+  popularity!: number;
+
   @OneToMany(
     () => RoutineExerciseEntity,
     routineExercise => routineExercise.exercise,
