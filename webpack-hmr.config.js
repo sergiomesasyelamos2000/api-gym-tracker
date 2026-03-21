@@ -4,7 +4,11 @@ const { RunScriptWebpackPlugin } = require('run-script-webpack-plugin');
 module.exports = function (options, webpack) {
   return {
     ...options,
-    entry: ['webpack/hot/poll?100', options.entry],
+    entry: [
+      'webpack/hot/poll?100',
+      require.resolve('./src/crypto.global.ts'),
+      options.entry,
+    ],
     externals: [
       nodeExternals({
         allowlist: ['webpack/hot/poll?100'],
