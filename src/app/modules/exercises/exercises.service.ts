@@ -48,6 +48,7 @@ interface ExerciseSearchParams {
   name?: string;
   equipment?: string;
   muscle?: string;
+  muscles?: string;
 }
 
 @Injectable()
@@ -248,7 +249,14 @@ export class ExercisesService implements OnModuleInit {
 
     const normalizedName = params.name?.trim().toLowerCase();
     const normalizedEquipment = params.equipment?.trim().toLowerCase();
-    const normalizedMuscle = params.muscle?.trim().toLowerCase();
+    const rawMuscles =
+      params.muscles ??
+      params.muscle ??
+      '';
+    const normalizedMuscles = rawMuscles
+      .split(',')
+      .map(value => value.trim().toLowerCase())
+      .filter(value => value.length > 0);
 
     if (normalizedName) {
       query.andWhere('LOWER(exercise.name) LIKE :name', {
@@ -282,49 +290,33 @@ export class ExercisesService implements OnModuleInit {
       );
     }
 
-    if (normalizedMuscle) {
+    if (normalizedMuscles.length > 0) {
       query.andWhere(
         new Brackets(qb => {
-          qb.where(
-            `
+          normalizedMuscles.forEach((muscle, index) => {
+            const key = `muscle_${index}`;
+            const prefixKey = `musclePrefix_${index}`;
+            const clause = `
               EXISTS (
                 SELECT 1
                 FROM unnest(string_to_array(COALESCE(LOWER(exercise.targetMuscles), ''), ',')) AS muscle_token
-                WHERE btrim(muscle_token) = :muscle
+                WHERE btrim(muscle_token) = :${key}
+                   OR btrim(muscle_token) LIKE :${prefixKey}
               )
-            `,
-            { muscle: normalizedMuscle },
-          )
-            .orWhere(
-              `
-                EXISTS (
-                  SELECT 1
-                  FROM unnest(string_to_array(COALESCE(LOWER(exercise.targetMuscles), ''), ',')) AS muscle_token
-                  WHERE btrim(muscle_token) LIKE :musclePrefix
-                )
-              `,
-              { musclePrefix: `${normalizedMuscle} %` },
-            )
-            .orWhere(
-              `
-                EXISTS (
-                  SELECT 1
-                  FROM unnest(string_to_array(COALESCE(LOWER(exercise.bodyParts), ''), ',')) AS body_part_token
-                  WHERE btrim(body_part_token) = :muscle
-                )
-              `,
-              { muscle: normalizedMuscle },
-            )
-            .orWhere(
-              `
-                EXISTS (
-                  SELECT 1
-                  FROM unnest(string_to_array(COALESCE(LOWER(exercise.bodyParts), ''), ',')) AS body_part_token
-                  WHERE btrim(body_part_token) LIKE :musclePrefix
-                )
-              `,
-              { musclePrefix: `${normalizedMuscle} %` },
-            );
+            `;
+
+            if (index === 0) {
+              qb.where(clause, {
+                [key]: muscle,
+                [prefixKey]: `${muscle} %`,
+              });
+            } else {
+              qb.orWhere(clause, {
+                [key]: muscle,
+                [prefixKey]: `${muscle} %`,
+              });
+            }
+          });
         }),
       );
     }

@@ -46,7 +46,7 @@ services:
         npm run migration:run &&
         echo '✅ Migrations completed!' &&
         echo '🌱 Seeding exercise popularity...' &&
-        PGPASSWORD=${DATABASE_PASSWORD:-postgres} psql -h ${DATABASE_HOST:-postgres} -U ${DATABASE_USER:-postgres} -d ${DATABASE_NAME:-gym_db} -f /usr/src/app/scripts/seed-exercise-popularity.sql &&
+        PGPASSWORD=$${DATABASE_PASSWORD:-postgres} psql -h $${DATABASE_HOST:-postgres} -U $${DATABASE_USER:-postgres} -d $${DATABASE_NAME:-gym_db} -f /usr/src/app/scripts/seed-exercise-popularity.sql &&
         echo '✅ Exercise popularity seeded!' &&
         echo '🚀 Starting API server...' &&
         npm run start:dev
