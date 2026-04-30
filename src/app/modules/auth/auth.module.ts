@@ -7,7 +7,6 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from '../../strategies/google.strategy';
-import { AppleStrategy } from '../../strategies/apple.strategy';
 import { UserEntity } from '@app/entity-data-models';
 import { EmailService } from './email.service';
 

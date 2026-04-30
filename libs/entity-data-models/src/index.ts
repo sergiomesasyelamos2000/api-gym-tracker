@@ -4,6 +4,7 @@ export * from './dtos/shared-types';
 // Export frontend types
 export type {
   GoogleLoginDto,
+  AppleLoginDto,
   GoogleAuthResponseDto,
   UserAnthropometricsDto,
   UserGoalsDto,

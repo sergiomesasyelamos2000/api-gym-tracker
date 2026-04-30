@@ -19,12 +19,32 @@ import {
   RefreshTokenRequestDto,
   ResetPasswordRequestDto,
   UpdateUserProfileDto,
+  FavoriteProductEntity,
+  CustomProductEntity,
+  CustomMealEntity,
+  ShoppingListItemEntity,
 } from '@app/entity-data-models';
+import type { AppleLoginDto } from '@app/entity-data-models/dtos/frontend-types';
 import type { AuthResponse, AuthTokens, UserResponse } from '@sergiomesasyelamos2000/shared';
 import cloudinary from '../../../config/cloudinary.config';
 import { OAuth2Client } from 'google-auth-library';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, createPublicKey, randomBytes, type JsonWebKey } from 'crypto';
 import { EmailService } from './email.service';
+import * as jwt from 'jsonwebtoken';
+
+interface AppleIdentityTokenPayload extends jwt.JwtPayload {
+  sub: string;
+  email?: string;
+}
+
+interface AppleJwk {
+  kty: string;
+  kid: string;
+  use: string;
+  alg: string;
+  n: string;
+  e: string;
+}
 
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 72;
@@ -37,6 +57,10 @@ const PASSWORD_RESET_RESEND_COOLDOWN_MS = 60 * 1000;
 @Injectable()
 export class AuthService {
   private googleClient: OAuth2Client;
+  private static appleKeysCache:
+    | { expiresAt: number; keys: AppleJwk[] }
+    | null = null;
+
   constructor(
     private jwtService: JwtService,
     @InjectRepository(UserEntity)
@@ -247,6 +271,57 @@ export class AuthService {
       console.error('Google Auth Error:', error);
       throw new UnauthorizedException('Invalid Google Token');
     }
+  }
+
+  // ==================== APPLE AUTH ====================
+
+  async appleLogin(dto: AppleLoginDto): Promise<AuthResponse> {
+    if (!dto.identityToken) {
+      throw new BadRequestException('Apple identity token is required');
+    }
+
+    const payload = await this.verifyAppleIdentityToken(dto.identityToken);
+    const appleId = payload.sub;
+    const email = payload.email?.trim().toLowerCase();
+    let user = await this.userRepository.findOne({
+      where: email ? [{ appleId }, { email }] : { appleId },
+    });
+    if (user) {
+      if (!user.appleId) {
+        user.appleId = appleId;
+      }
+
+      if (email && !user.email) {
+        user.email = email;
+      }
+
+      const displayName = this.resolveAppleDisplayName(dto, email);
+      if (displayName && (!user.name || user.name.trim().length === 0)) {
+        user.name = displayName;
+      }
+    } else {
+      if (!email) {
+        throw new BadRequestException(
+          'Apple no proporciono un email para crear la cuenta. Elimina el permiso de EvoFit en tu Apple ID y vuelve a intentarlo.',
+        );
+      }
+
+      user = this.userRepository.create({
+        email,
+        name: this.resolveAppleDisplayName(dto, email),
+        appleId,
+      });
+    }
+
+    const savedUser = await this.userRepository.save(user);
+    const tokens = await this.generateTokens(savedUser);
+    savedUser.refreshToken = tokens.refreshToken;
+    await this.userRepository.save(savedUser);
+
+    return {
+      user: this.mapUserToDto(savedUser),
+      tokens,
+    };
   }
 
   // ==================== LOGOUT ====================
@@ -466,6 +541,24 @@ export class AuthService {
     return this.mapUserToDto(updatedUser);
   }
 
+  // ==================== DELETE ACCOUNT ====================
+
+  async deleteAccount(userId: string): Promise<void> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    await this.userRepository.manager.transaction(async (manager) => {
+      await manager.delete(FavoriteProductEntity, { userId });
+      await manager.delete(CustomProductEntity, { userId });
+      await manager.delete(CustomMealEntity, { userId });
+      await manager.delete(ShoppingListItemEntity, { userId });
+      await manager.delete(UserEntity, { id: userId });
+    });
+  }
+
   // ==================== HELPER METHODS ====================
 
   private async generateTokens(user: UserEntity): Promise<AuthTokens> {
@@ -585,5 +678,114 @@ export class AuthService {
       code += (bytes[i] % 10).toString();
     }
     return code;
+  }
+
+  private resolveAppleDisplayName(
+    dto: AppleLoginDto,
+    fallbackEmail?: string,
+  ): string {
+    const fullName = [dto.fullName?.givenName, dto.fullName?.familyName]
+      .filter((part): part is string => !!part && part.trim().length > 0)
+      .map((part) => part.trim())
+      .join(' ')
+      .trim();
+
+    if (fullName) {
+      return fullName;
+    }
+
+    if (fallbackEmail) {
+      return fallbackEmail.split('@')[0];
+    }
+
+    return 'Usuario Apple';
+  }
+
+  private getAppleAudiences(): string[] {
+    return [
+      process.env.APPLE_CLIENT_ID,
+      process.env.APPLE_CLIENT_ID_IOS,
+      process.env.APPLE_BUNDLE_ID,
+    ]
+      .filter((value): value is string => !!value)
+      .map((value) => value.trim())
+      .filter((value, index, array) => value.length > 0 && array.indexOf(value) === index);
+  }
+
+  private async verifyAppleIdentityToken(
+    identityToken: string,
+  ): Promise<AppleIdentityTokenPayload> {
+    const decoded = jwt.decode(identityToken, { complete: true });
+
+    if (!decoded || typeof decoded !== 'object' || !decoded.header?.kid) {
+      throw new UnauthorizedException('Invalid Apple identity token');
+    }
+
+    const audiences = this.getAppleAudiences();
+    if (audiences.length === 0) {
+      throw new UnauthorizedException(
+        'Apple login is not configured on the server',
+      );
+    }
+
+    const keys = await this.getAppleSigningKeys();
+    const signingKey = keys.find(
+      (key) =>
+        key.kid === decoded.header.kid &&
+        (!decoded.header.alg || key.alg === decoded.header.alg),
+    );
+
+    if (!signingKey) {
+      throw new UnauthorizedException('Unable to find Apple signing key');
+    }
+
+    try {
+      const publicKey = createPublicKey({
+        key: signingKey as unknown as JsonWebKey,
+        format: 'jwk',
+      });
+
+      const audienceOption =
+        audiences.length === 1
+          ? audiences[0]
+          : (audiences as [string, ...string[]]);
+
+      return jwt.verify(identityToken, publicKey, {
+        algorithms: ['RS256'],
+        issuer: 'https://appleid.apple.com',
+        audience: audienceOption,
+      }) as AppleIdentityTokenPayload;
+    } catch (error) {
+      console.error('Apple Auth Error:', error);
+      throw new UnauthorizedException('Invalid Apple identity token');
+    }
+  }
+
+  private async getAppleSigningKeys(): Promise<AppleJwk[]> {
+    const now = Date.now();
+    const cached = AuthService.appleKeysCache;
+
+    if (cached && cached.expiresAt > now) {
+      return cached.keys;
+    }
+
+    const response = await fetch('https://appleid.apple.com/auth/keys');
+    if (!response.ok) {
+      throw new UnauthorizedException('Unable to fetch Apple signing keys');
+    }
+
+    const data = (await response.json()) as { keys?: AppleJwk[] };
+    const keys = Array.isArray(data.keys) ? data.keys : [];
+
+    if (keys.length === 0) {
+      throw new UnauthorizedException('Apple signing keys are unavailable');
+    }
+
+    AuthService.appleKeysCache = {
+      keys,
+      expiresAt: now + 60 * 60 * 1000,
+    };
+
+    return keys;
   }
 }

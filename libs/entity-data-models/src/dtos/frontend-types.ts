@@ -26,6 +26,17 @@ export interface GoogleLoginDto {
   picture?: string;
 }
 
+export interface AppleLoginDto {
+  identityToken: string;
+  authorizationCode?: string;
+  user?: string;
+  email?: string;
+  fullName?: {
+    givenName?: string | null;
+    familyName?: string | null;
+  };
+}
+
 export interface GoogleAuthResponseDto {
   accessToken: string;
   refreshToken?: string;

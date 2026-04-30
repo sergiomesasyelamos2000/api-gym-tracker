@@ -8,11 +8,16 @@ import {
   ResetPasswordRequestDto,
   UpdateUserProfileDto,
 } from '@app/entity-data-models';
-import type { GoogleLoginDto } from '@app/entity-data-models/dtos/frontend-types';
+import type {
+  AppleLoginDto,
+  GoogleLoginDto,
+} from '@app/entity-data-models/dtos/frontend-types';
 import type { AuthResponse, UserResponse } from '@sergiomesasyelamos2000/shared';
 import {
   Body,
   Controller,
+  Delete,
+  ForbiddenException,
   Get,
   Param,
   Post,
@@ -58,6 +63,13 @@ export class AuthController {
     return mapAuthResponseToContract(response);
   }
 
+  @Post('apple/login')
+  @ApiOperation({ summary: 'Login with Apple identity token from iOS client' })
+  async appleLogin(@Body() body: AppleLoginDto): Promise<AuthResponse> {
+    const response = await this.authService.appleLogin(body);
+    return mapAuthResponseToContract(response);
+  }
+
   @Post('google/callback')
   @ApiOperation({ summary: 'Google OAuth callback' })
   async googleCallback(
@@ -70,14 +82,14 @@ export class AuthController {
   @Get('apple')
   @UseGuards(AuthGuard('apple'))
   @ApiOperation({ summary: 'Initiate Apple OAuth flow' })
-  async appleLogin() {
+  async beginAppleLogin() {
     return;
   }
 
   @Get('apple/callback')
   @UseGuards(AuthGuard('apple'))
   @ApiOperation({ summary: 'Apple OAuth callback' })
-  async appleCallback(@Req() req) {
+  async handleAppleCallback(@Req() req) {
     return this.authService.validateOAuthLogin(req.user, 'apple');
   }
 
@@ -139,10 +151,30 @@ export class AuthController {
     @CurrentUser() user: CurrentUserData,
   ): Promise<UserResponse> {
     if (userId !== user.id) {
-      throw new Error("Unauthorized: Cannot update another user's profile");
+      throw new ForbiddenException(
+        "Unauthorized: Cannot update another user's profile",
+      );
     }
 
     const updatedUser = await this.authService.updateUserProfile(userId, updates);
     return mapUserToAuthContract(updatedUser);
+  }
+
+  @Delete('users/:userId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete the authenticated user account' })
+  async deleteUserAccount(
+    @Param('userId') userId: string,
+    @CurrentUser() user: CurrentUserData,
+  ): Promise<{ message: string }> {
+    if (userId !== user.id) {
+      throw new ForbiddenException(
+        "Unauthorized: Cannot delete another user's account",
+      );
+    }
+
+    await this.authService.deleteAccount(userId);
+    return { message: 'Account deleted successfully' };
   }
 }
