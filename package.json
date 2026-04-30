@@ -31,6 +31,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@apple/app-store-server-library": "^3.0.0",
     "@getbrevo/brevo": "^2.5.0",
     "@google-cloud/translate": "^9.2.1",
     "@google/generative-ai": "^0.24.1",

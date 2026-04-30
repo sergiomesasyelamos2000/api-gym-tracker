@@ -10,6 +10,7 @@ import {
 import { SubscriptionService } from './subscription.service';
 import { StripeService } from './stripe.service';
 import { SubscriptionController } from './subscription.controller';
+import { PurchasesController } from './purchases.controller';
 import { SubscriptionGuard } from './guards/subscription.guard';
 import { AuthModule } from '../auth/auth.module';
 
@@ -24,7 +25,7 @@ import { AuthModule } from '../auth/auth.module';
     ConfigModule,
     AuthModule, // For JwtAuthGuard and CurrentUser decorator
   ],
-  controllers: [SubscriptionController],
+  controllers: [SubscriptionController, PurchasesController],
   providers: [SubscriptionService, StripeService, SubscriptionGuard],
   exports: [SubscriptionService, SubscriptionGuard], // Export to use in other modules
 })

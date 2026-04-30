@@ -22,9 +22,45 @@ import {
   CustomProductEntity,
   CustomMealEntity,
 } from '@app/entity-data-models';
+import { VerifyApplePurchaseDto } from './dto/apple-purchase.dto';
 import { StripeService } from './stripe.service';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+import {
+  AutoRenewStatus,
+  Environment,
+  NotificationTypeV2,
+  SignedDataVerifier,
+  type JWSRenewalInfoDecodedPayload,
+  type JWSTransactionDecodedPayload,
+} from '@apple/app-store-server-library';
+
+interface AppleVerifyReceiptTransaction {
+  product_id?: string;
+  original_transaction_id?: string;
+  transaction_id?: string;
+  purchase_date_ms?: string;
+  expires_date_ms?: string;
+  cancellation_date_ms?: string;
+}
+
+interface AppleVerifyReceiptRenewalInfo {
+  product_id?: string;
+  original_transaction_id?: string;
+  auto_renew_status?: string;
+}
+
+interface AppleVerifyReceiptResponse {
+  status: number;
+  environment?: string;
+  latest_receipt_info?: AppleVerifyReceiptTransaction[];
+  pending_renewal_info?: AppleVerifyReceiptRenewalInfo[];
+  receipt?: {
+    in_app?: AppleVerifyReceiptTransaction[];
+  };
+}
 
 @Injectable()
 export class SubscriptionService {
@@ -236,6 +272,116 @@ export class SubscriptionService {
       isPremium,
       daysRemaining,
     };
+  }
+
+  async verifyApplePurchase(
+    userId: string,
+    dto: VerifyApplePurchaseDto,
+  ): Promise<SubscriptionStatusResponseDto> {
+    const verifyResponse = await this.verifyAppleReceipt(dto.receiptData);
+    const candidate = this.selectAppleReceiptTransaction(
+      verifyResponse,
+      dto.productId,
+    );
+
+    if (!candidate) {
+      throw new BadRequestException(
+        'No se encontro ninguna compra valida de Apple para los productos configurados',
+      );
+    }
+
+    const productId = candidate.product_id;
+    const plan = this.getPlanFromAppleProductId(productId);
+
+    if (!plan) {
+      throw new BadRequestException(
+        `Producto Apple no reconocido: ${productId || 'desconocido'}`,
+      );
+    }
+
+    const renewalInfo = this.selectRenewalInfo(
+      verifyResponse,
+      candidate.original_transaction_id,
+      productId,
+    );
+
+    await this.applyAppleEntitlement(userId, plan, candidate, renewalInfo);
+    return this.getSubscriptionStatus(userId);
+  }
+
+  async handleAppleServerNotification(signedPayload: string): Promise<void> {
+    const verifier = this.getAppleSignedDataVerifier();
+    const notification =
+      await verifier.verifyAndDecodeNotification(signedPayload);
+
+    const signedTransactionInfo = notification.data?.signedTransactionInfo;
+    const signedRenewalInfo = notification.data?.signedRenewalInfo;
+
+    const transaction = signedTransactionInfo
+      ? await verifier.verifyAndDecodeTransaction(signedTransactionInfo)
+      : null;
+    const renewalInfo = signedRenewalInfo
+      ? await verifier.verifyAndDecodeRenewalInfo(signedRenewalInfo)
+      : null;
+
+    const subscription = await this.findSubscriptionByAppleTransaction(
+      transaction,
+      renewalInfo,
+    );
+
+    if (!subscription) {
+      this.logger.warn(
+        `Apple notification ignored: no subscription found for original transaction ${transaction?.originalTransactionId || renewalInfo?.originalTransactionId || 'unknown'}`,
+      );
+      return;
+    }
+
+    switch (notification.notificationType) {
+      case NotificationTypeV2.SUBSCRIBED:
+      case NotificationTypeV2.DID_RENEW:
+      case NotificationTypeV2.OFFER_REDEEMED:
+      case NotificationTypeV2.RENEWAL_EXTENDED:
+      case NotificationTypeV2.REFUND_REVERSED:
+      case NotificationTypeV2.ONE_TIME_CHARGE:
+        if (transaction) {
+          const plan = this.getPlanFromAppleProductId(transaction.productId);
+          if (plan) {
+            await this.applyAppleEntitlement(
+              subscription.userId,
+              plan,
+              this.mapDecodedTransactionToReceiptTransaction(transaction),
+              renewalInfo
+                ? this.mapDecodedRenewalInfoToReceiptRenewalInfo(renewalInfo)
+                : undefined,
+            );
+          }
+        }
+        break;
+
+      case NotificationTypeV2.DID_CHANGE_RENEWAL_STATUS:
+        subscription.cancelAtPeriodEnd =
+          renewalInfo?.autoRenewStatus === AutoRenewStatus.OFF;
+        await this.subscriptionRepository.save(subscription);
+        break;
+
+      case NotificationTypeV2.DID_FAIL_TO_RENEW:
+        subscription.status = SubscriptionStatus.PAST_DUE;
+        await this.subscriptionRepository.save(subscription);
+        break;
+
+      case NotificationTypeV2.GRACE_PERIOD_EXPIRED:
+      case NotificationTypeV2.EXPIRED:
+      case NotificationTypeV2.REFUND:
+      case NotificationTypeV2.REVOKE:
+        await this.revokeAppleSubscription(subscription);
+        break;
+
+      default:
+        this.logger.log(
+          `Apple notification type not handled explicitly: ${notification.notificationType}`,
+        );
+        break;
+    }
   }
 
   /**
@@ -523,6 +669,297 @@ export class SubscriptionService {
         await this.subscriptionRepository.save(subscription);
       }
     }
+  }
+
+  private async verifyAppleReceipt(
+    receiptData: string,
+  ): Promise<AppleVerifyReceiptResponse> {
+    const sharedSecret =
+      this.configService.get<string>('APPLE_SHARED_SECRET') || '';
+
+    if (!sharedSecret) {
+      throw new BadRequestException(
+        'APPLE_SHARED_SECRET no esta configurado en el backend',
+      );
+    }
+
+    const payload = {
+      'receipt-data': receiptData,
+      password: sharedSecret,
+      'exclude-old-transactions': false,
+    };
+
+    const productionResponse = await this.postVerifyReceipt(
+      'https://buy.itunes.apple.com/verifyReceipt',
+      payload,
+    );
+
+    if (productionResponse.status === 21007) {
+      return this.postVerifyReceipt(
+        'https://sandbox.itunes.apple.com/verifyReceipt',
+        payload,
+      );
+    }
+
+    if (productionResponse.status !== 0) {
+      throw new BadRequestException(
+        `Apple verifyReceipt fallo con status ${productionResponse.status}`,
+      );
+    }
+
+    return productionResponse;
+  }
+
+  private async postVerifyReceipt(
+    url: string,
+    payload: Record<string, unknown>,
+  ): Promise<AppleVerifyReceiptResponse> {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new BadRequestException(
+        `No se pudo validar el recibo de Apple (${response.status})`,
+      );
+    }
+
+    return (await response.json()) as AppleVerifyReceiptResponse;
+  }
+
+  private selectAppleReceiptTransaction(
+    verifyResponse: AppleVerifyReceiptResponse,
+    requestedProductId?: string,
+  ): AppleVerifyReceiptTransaction | null {
+    const knownProductIds = Object.values(this.getAppleProductIdMap()).filter(
+      Boolean,
+    ) as string[];
+    const transactions = [
+      ...(verifyResponse.latest_receipt_info || []),
+      ...(verifyResponse.receipt?.in_app || []),
+    ].filter((transaction) =>
+      requestedProductId
+        ? transaction.product_id === requestedProductId
+        : knownProductIds.includes(transaction.product_id || ''),
+    );
+
+    if (transactions.length === 0) {
+      return null;
+    }
+
+    return transactions.sort((left, right) => {
+      const leftSortKey = Number(
+        left.expires_date_ms || left.purchase_date_ms || 0,
+      );
+      const rightSortKey = Number(
+        right.expires_date_ms || right.purchase_date_ms || 0,
+      );
+
+      return rightSortKey - leftSortKey;
+    })[0];
+  }
+
+  private selectRenewalInfo(
+    verifyResponse: AppleVerifyReceiptResponse,
+    originalTransactionId?: string,
+    productId?: string,
+  ): AppleVerifyReceiptRenewalInfo | undefined {
+    return verifyResponse.pending_renewal_info?.find(
+      (renewal) =>
+        renewal.original_transaction_id === originalTransactionId ||
+        renewal.product_id === productId,
+    );
+  }
+
+  private async applyAppleEntitlement(
+    userId: string,
+    plan: SubscriptionPlan,
+    transaction: AppleVerifyReceiptTransaction,
+    renewalInfo?: AppleVerifyReceiptRenewalInfo,
+  ): Promise<void> {
+    const subscription = await this.getOrCreateSubscription(userId);
+    const now = Date.now();
+    const purchaseDateMs = Number(transaction.purchase_date_ms || now);
+    const expiresDateMs = Number(transaction.expires_date_ms || 0);
+    const isLifetime = plan === SubscriptionPlan.LIFETIME;
+    const isCanceled =
+      renewalInfo?.auto_renew_status === String(AutoRenewStatus.OFF);
+    const isRefunded = Boolean(transaction.cancellation_date_ms);
+
+    subscription.billingProvider = 'apple';
+    subscription.appleProductId = transaction.product_id;
+    subscription.appleOriginalTransactionId =
+      transaction.original_transaction_id || subscription.appleOriginalTransactionId;
+    subscription.appleTransactionId =
+      transaction.transaction_id || subscription.appleTransactionId;
+    subscription.plan = isRefunded ? SubscriptionPlan.FREE : plan;
+    subscription.status = isRefunded
+      ? SubscriptionStatus.EXPIRED
+      : isLifetime
+        ? SubscriptionStatus.ACTIVE
+        : expiresDateMs > now
+          ? SubscriptionStatus.ACTIVE
+          : SubscriptionStatus.EXPIRED;
+    subscription.currentPeriodStart = new Date(purchaseDateMs);
+    subscription.currentPeriodEnd =
+      !isLifetime && expiresDateMs ? new Date(expiresDateMs) : undefined;
+    subscription.cancelAtPeriodEnd = !isLifetime && isCanceled;
+    subscription.canceledAt =
+      !isLifetime && isCanceled ? new Date() : undefined;
+    subscription.price = this.getDefaultPriceForPlan(plan);
+    subscription.currency = 'eur';
+
+    await this.subscriptionRepository.save(subscription);
+  }
+
+  private async revokeAppleSubscription(
+    subscription: SubscriptionEntity,
+  ): Promise<void> {
+    subscription.plan = SubscriptionPlan.FREE;
+    subscription.status = SubscriptionStatus.EXPIRED;
+    subscription.cancelAtPeriodEnd = false;
+    subscription.canceledAt = new Date();
+    subscription.currentPeriodEnd = new Date();
+    await this.subscriptionRepository.save(subscription);
+  }
+
+  private async findSubscriptionByAppleTransaction(
+    transaction: JWSTransactionDecodedPayload | null,
+    renewalInfo: JWSRenewalInfoDecodedPayload | null,
+  ): Promise<SubscriptionEntity | null> {
+    const originalTransactionId =
+      transaction?.originalTransactionId || renewalInfo?.originalTransactionId;
+    const transactionId = transaction?.transactionId;
+    const appAccountToken = transaction?.appAccountToken;
+
+    return this.subscriptionRepository.findOne({
+      where: [
+        ...(originalTransactionId
+          ? [{ appleOriginalTransactionId: originalTransactionId }]
+          : []),
+        ...(transactionId ? [{ appleTransactionId: transactionId }] : []),
+        ...(appAccountToken ? [{ userId: appAccountToken }] : []),
+      ],
+    });
+  }
+
+  private mapDecodedTransactionToReceiptTransaction(
+    transaction: JWSTransactionDecodedPayload,
+  ): AppleVerifyReceiptTransaction {
+    return {
+      product_id: transaction.productId,
+      original_transaction_id: transaction.originalTransactionId,
+      transaction_id: transaction.transactionId,
+      purchase_date_ms: transaction.purchaseDate?.toString(),
+      expires_date_ms: transaction.expiresDate?.toString(),
+      cancellation_date_ms: transaction.revocationDate?.toString(),
+    };
+  }
+
+  private mapDecodedRenewalInfoToReceiptRenewalInfo(
+    renewalInfo: JWSRenewalInfoDecodedPayload,
+  ): AppleVerifyReceiptRenewalInfo {
+    return {
+      original_transaction_id: renewalInfo.originalTransactionId,
+      product_id: renewalInfo.productId,
+      auto_renew_status:
+        renewalInfo.autoRenewStatus !== undefined
+          ? String(renewalInfo.autoRenewStatus)
+          : undefined,
+    };
+  }
+
+  private getAppleProductIdMap(): Record<SubscriptionPlan, string | undefined> {
+    return {
+      [SubscriptionPlan.FREE]: undefined,
+      [SubscriptionPlan.MONTHLY]: this.configService.get<string>(
+        'APPLE_IAP_MONTHLY_PRODUCT_ID',
+      ),
+      [SubscriptionPlan.YEARLY]: this.configService.get<string>(
+        'APPLE_IAP_YEARLY_PRODUCT_ID',
+      ),
+      [SubscriptionPlan.LIFETIME]: this.configService.get<string>(
+        'APPLE_IAP_LIFETIME_PRODUCT_ID',
+      ),
+    };
+  }
+
+  private getPlanFromAppleProductId(
+    productId?: string,
+  ): SubscriptionPlan | null {
+    if (!productId) {
+      return null;
+    }
+
+    const productMap = this.getAppleProductIdMap();
+    const entry = Object.entries(productMap).find(
+      ([plan, configuredProductId]) =>
+        plan !== SubscriptionPlan.FREE && configuredProductId === productId,
+    );
+
+    return (entry?.[0] as SubscriptionPlan | undefined) || null;
+  }
+
+  private getDefaultPriceForPlan(plan: SubscriptionPlan): number {
+    switch (plan) {
+      case SubscriptionPlan.MONTHLY:
+        return 0.99;
+      case SubscriptionPlan.YEARLY:
+        return 9.99;
+      case SubscriptionPlan.LIFETIME:
+        return 19.99;
+      default:
+        return 0;
+    }
+  }
+
+  private getAppleSignedDataVerifier(): SignedDataVerifier {
+    const bundleId =
+      this.configService.get<string>('APPLE_BUNDLE_ID') ||
+      this.configService.get<string>('APPLE_CLIENT_ID_IOS') ||
+      '';
+    const certificatePaths = (
+      this.configService.get<string>('APPLE_ROOT_CA_PATHS') || ''
+    )
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    if (!bundleId) {
+      throw new BadRequestException(
+        'APPLE_BUNDLE_ID o APPLE_CLIENT_ID_IOS debe estar configurado',
+      );
+    }
+
+    if (certificatePaths.length === 0) {
+      throw new BadRequestException(
+        'APPLE_ROOT_CA_PATHS debe apuntar a los certificados raiz de Apple para verificar notificaciones',
+      );
+    }
+
+    const certificates = certificatePaths.map((filePath) =>
+      readFileSync(resolve(process.cwd(), filePath)),
+    );
+    const environment =
+      (this.configService.get<string>('APPLE_SERVER_ENVIRONMENT') || 'Sandbox')
+        .toLowerCase() === 'production'
+        ? Environment.PRODUCTION
+        : Environment.SANDBOX;
+    const appAppleIdValue =
+      this.configService.get<string>('APPLE_APP_STORE_APPLE_ID') || '';
+    const appAppleId = appAppleIdValue ? Number(appAppleIdValue) : undefined;
+
+    return new SignedDataVerifier(
+      certificates,
+      true,
+      environment,
+      bundleId,
+      appAppleId,
+    );
   }
 
   private getPriceIdForPlan(plan: SubscriptionPlan): string {

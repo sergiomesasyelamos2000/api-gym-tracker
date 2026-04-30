@@ -33,6 +33,21 @@ export class SubscriptionEntity {
   @Column({ nullable: true })
   stripeSubscriptionId?: string; // null para lifetime
 
+  @Column({ nullable: true })
+  @Index()
+  billingProvider?: string;
+
+  @Column({ nullable: true })
+  @Index()
+  appleOriginalTransactionId?: string;
+
+  @Column({ nullable: true })
+  @Index()
+  appleTransactionId?: string;
+
+  @Column({ nullable: true })
+  appleProductId?: string;
+
   // Subscription details
   @Column({
     type: 'enum',
