@@ -5,6 +5,9 @@ import {
   CreateFoodEntryDto,
   CreateShoppingListItemDto,
   CreateUserNutritionProfileDto,
+  CreateNutritionPlanDto,
+  GenerateNutritionPlanDto,
+  UpdateNutritionPlanDto,
   UpdateCustomMealDto,
   UpdateCustomProductDto,
   UpdateFoodEntryDto,
@@ -42,6 +45,7 @@ import { MealService } from './services/meal.service';
 import { DiaryService } from './services/diary.service';
 import { ShoppingListService } from './services/shopping-list.service';
 import { ProfileService } from './services/profile.service';
+import { NutritionPlanService } from './services/nutrition-plan.service';
 
 @Controller('nutrition')
 // ⚠️ JwtAuthGuard removed temporarily due to token validation issues
@@ -54,6 +58,7 @@ export class NutritionController {
     private diaryService: DiaryService,
     private shoppingListService: ShoppingListService,
     private profileService: ProfileService,
+    private nutritionPlanService: NutritionPlanService,
   ) {}
 
   @Post()
@@ -463,5 +468,65 @@ export class NutritionController {
     @Query('query') query: string,
   ) {
     return this.mealService.searchCustomMeals(userId, query);
+  }
+
+  // ==================== NUTRITION PLANS ENDPOINTS ====================
+
+  @Post('plans/generate')
+  async generateNutritionPlan(@Body() dto: GenerateNutritionPlanDto) {
+    return this.nutritionPlanService.generateFromAi(dto);
+  }
+
+  @Post('plans')
+  async createNutritionPlan(@Body() dto: CreateNutritionPlanDto) {
+    return this.nutritionPlanService.create(dto);
+  }
+
+  @Get('plans/:userId/active')
+  async getActiveNutritionPlan(@Param('userId') userId: string) {
+    return this.nutritionPlanService.findActiveByUser(userId);
+  }
+
+  @Get('plans/:userId')
+  async getNutritionPlans(@Param('userId') userId: string) {
+    return this.nutritionPlanService.findAllByUser(userId);
+  }
+
+  @Get('plans/:userId/:planId')
+  async getNutritionPlanById(
+    @Param('userId') userId: string,
+    @Param('planId') planId: string,
+  ) {
+    return this.nutritionPlanService.findById(userId, planId);
+  }
+
+  @Put('plans/:planId')
+  async updateNutritionPlan(
+    @Param('planId') planId: string,
+    @Body() dto: UpdateNutritionPlanDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    const userId = user?.id || dto.userId;
+    return this.nutritionPlanService.update(planId, dto, userId as string);
+  }
+
+  @Put('plans/:planId/activate')
+  async activateNutritionPlan(
+    @Param('planId') planId: string,
+    @CurrentUser() user: CurrentUserData,
+    @Query('userId') fallbackUserId?: string,
+  ) {
+    const userId = user?.id || fallbackUserId;
+    return this.nutritionPlanService.activate(planId, userId as string);
+  }
+
+  @Delete('plans/:planId')
+  async deleteNutritionPlan(
+    @Param('planId') planId: string,
+    @CurrentUser() user: CurrentUserData,
+    @Query('userId') fallbackUserId?: string,
+  ) {
+    const userId = user?.id || fallbackUserId;
+    return this.nutritionPlanService.delete(planId, userId as string);
   }
 }

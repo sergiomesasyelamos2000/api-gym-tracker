@@ -17,6 +17,9 @@ export type HeightUnit = 'cm' | 'ft';
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 export type FoodUnit = 'gram' | 'ml' | 'portion' | 'custom';
 
+// Nutrition Plan Types
+export type NutritionPlanStatus = 'draft' | 'active' | 'archived';
+
 // Exercise Types
 export enum WeightUnit {
   KG = 'kg',

@@ -1,6 +1,7 @@
 /* eslint-disable prettier/prettier */
 import {
   CustomMealEntity,
+  NutritionPlanEntity,
   CustomProductEntity,
   EquipmentEntity,
   ExerciseEntity,
@@ -141,6 +142,7 @@ import { ExportService } from './services/export.service';
             FavoriteProductEntity,
             CustomProductEntity,
             CustomMealEntity,
+            NutritionPlanEntity,
             SubscriptionEntity,
             UserEntity,
           ],

@@ -1,5 +1,6 @@
 import {
   CustomMealEntity,
+  NutritionPlanEntity,
   CustomProductEntity,
   FavoriteProductEntity,
   FoodEntryEntity,
@@ -18,6 +19,7 @@ import { MealService } from './services/meal.service';
 import { DiaryService } from './services/diary.service';
 import { ShoppingListService } from './services/shopping-list.service';
 import { ProfileService } from './services/profile.service';
+import { NutritionPlanService } from './services/nutrition-plan.service';
 import { AIService } from '../../services/ai.service';
 import { GeminiProvider } from '../../services/gemini.provider';
 import { GroqProvider } from '../../services/groq.provider';
@@ -33,6 +35,7 @@ import { SubscriptionModule } from '../subscription/subscription.module';
     DiaryService,
     ShoppingListService,
     ProfileService,
+    NutritionPlanService,
     AIService,
     GeminiProvider,
     GroqProvider,
@@ -49,6 +52,7 @@ import { SubscriptionModule } from '../subscription/subscription.module';
       FavoriteProductEntity,
       CustomProductEntity,
       CustomMealEntity,
+      NutritionPlanEntity,
       UserEntity,
     ]),
   ],

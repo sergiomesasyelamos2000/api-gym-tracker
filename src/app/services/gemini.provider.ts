@@ -4,6 +4,7 @@ import { ENV } from '../../environments/environment';
 import {
   AIProvider,
   ChatMessage,
+  ChatOptions,
   ChatResponse,
   UserContext,
 } from './ai-provider.base';
@@ -20,45 +21,55 @@ export class GeminiProvider extends AIProvider {
   async chat(
     messages: ChatMessage[],
     userContext?: UserContext,
+    options?: ChatOptions,
   ): Promise<ChatResponse> {
     try {
-      const systemPrompt = this.buildSystemPrompt(userContext);
+      const systemPrompt = this.buildSystemPrompt(
+        userContext,
+        options?.responseFormat,
+      );
 
-      // 1. Usar 'systemInstruction' nativo (disponible en versiones recientes del SDK)
-      // Esto evita el hack de crear mensajes falsos y reduce errores de rol.
+      // Keep gemini-2.5-flash: gemini-2.0-flash free-tier quota is often 0.
+      const modelName = 'gemini-2.5-flash';
+
+      const generationConfig: Record<string, unknown> = {
+        temperature: options?.temperature ?? 0.7,
+        maxOutputTokens: options?.maxTokens,
+      };
+
+      if (options?.responseFormat === 'json') {
+        generationConfig.responseMimeType = 'application/json';
+        // Avoid spending output budget on model "thinking".
+        generationConfig.thinkingConfig = { thinkingBudget: 0 };
+      }
+
       const model = this.client.getGenerativeModel({
-        model: 'gemini-2.5-flash', // Verified to work with free tier
+        model: modelName,
         systemInstruction: systemPrompt,
+        generationConfig: generationConfig as any,
       });
 
-      // 2. Preparar el historial (excluyendo el mensaje actual que se enviará después)
       let history = messages.slice(0, -1).map(msg => ({
         role: msg.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: msg.content }],
       }));
 
-      // 3. CORRECCIÓN CRÍTICA: Asegurar que el historial empiece por 'user'
-      // Si el primer mensaje es del modelo (ej. un saludo), lo eliminamos del historial
-      // para evitar el error "First content should be with role 'user'".
       if (history.length > 0 && history[0].role === 'model') {
         history = history.slice(1);
       }
 
-      // 4. Iniciar el chat con el historial limpio
       const chat = model.startChat({
         history: history,
       });
 
-      // 5. Enviar el último mensaje (el input actual del usuario)
       const lastMessage = messages[messages.length - 1];
       const result = await chat.sendMessage(lastMessage.content);
-
       const responseText = result.response.text();
 
       return {
         content: responseText,
         provider: 'gemini',
-        model: 'gemini-2.5-flash',
+        model: modelName,
       };
     } catch (error) {
       this.logger.error('Gemini API error:', error);

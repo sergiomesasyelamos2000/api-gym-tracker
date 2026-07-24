@@ -15,6 +15,7 @@ export * from './shopping-list.dto';
 export * from './favorite-product.dto';
 export * from './custom-product.dto';
 export * from './custom-meal.dto';
+export * from './nutrition-plan.dto';
 export * from './external-api.model';
 
 // These DTOs exist in both frontend-types.ts (interfaces) and individual files (classes with decorators)

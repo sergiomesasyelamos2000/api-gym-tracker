@@ -11,7 +11,7 @@ services:
       - '3000:3000'
     volumes:
       - .:/usr/src/app
-      - /usr/src/app/node_modules
+      - api_node_modules:/usr/src/app/node_modules
       - ../shared:/usr/src/shared
       - ./credentials:/usr/src/app/credentials
     env_file:
@@ -28,10 +28,18 @@ services:
           cpus: '0.5'
           memory: 512M
     environment:
+      # Override .env so local Docker uses compose Postgres, not Supabase.
+      - DATABASE_URL=
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
+      - DATABASE_USER=${DATABASE_USER:-postgres}
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-postgres}
+      - DATABASE_NAME=${DATABASE_NAME:-gym_db}
+      - NODE_ENV=development
+      - DATABASE_SSL=false
       - GOOGLE_APPLICATION_CREDENTIALS=/usr/src/app/credentials/google-credentials.json
       - NODE_AUTH_TOKEN=${NODE_AUTH_TOKEN}
+      - HUSKY=0
     command: >
       sh -c "
         echo '⏳ Waiting for PostgreSQL to be ready...' &&
@@ -41,7 +49,7 @@ services:
         done &&
         echo '✅ PostgreSQL is ready!' &&
         echo '📦 Installing dependencies...' &&
-        npm install &&
+        npm install --include=dev &&
         echo '🔄 Running migrations...' &&
         npm run migration:run &&
         echo '✅ Migrations completed!' &&
@@ -155,3 +163,4 @@ volumes:
   pgadmin_data:
   influxdb_data:
   grafana_data:
+  api_node_modules:

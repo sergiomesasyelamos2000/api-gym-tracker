@@ -11,6 +11,15 @@ export interface ChatResponse {
   model: string;
 }
 
+export interface ChatOptions {
+  maxTokens?: number;
+  temperature?: number;
+  responseFormat?: 'json';
+  timeoutMs?: number;
+  primaryTimeoutMs?: number;
+  fallbackTimeoutMs?: number;
+}
+
 export interface UserContext {
   userId?: string;
   profile?: {
@@ -64,6 +73,7 @@ export abstract class AIProvider {
   abstract chat(
     messages: ChatMessage[],
     userContext?: UserContext,
+    options?: ChatOptions,
   ): Promise<ChatResponse>;
 
   abstract isAvailable(): Promise<boolean>;
@@ -71,8 +81,14 @@ export abstract class AIProvider {
   /**
    * Build system prompt with user context (optimizado y COMPACTO)
    */
-  protected buildSystemPrompt(userContext?: UserContext): string {
-    let prompt = `Eres un asistente de nutrición deportiva profesional. Creas dietas personalizadas basadas en:
+  protected buildSystemPrompt(
+    userContext?: UserContext,
+    responseFormat?: ChatOptions['responseFormat'],
+  ): string {
+    let prompt =
+      responseFormat === 'json'
+        ? `Eres un nutricionista deportivo. Devuelve solo JSON válido, sin markdown, tablas ni texto adicional.`
+        : `Eres un asistente de nutrición deportiva profesional. Creas dietas personalizadas basadas en:
 - Datos del usuario (edad, peso, altura, actividad)
 - Objetivos (calorías, macros, peso objetivo)
 - Entrenamiento (rutinas, sesiones, horarios)

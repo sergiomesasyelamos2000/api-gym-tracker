@@ -1,6 +1,7 @@
 # Base stage
 FROM node:20-alpine AS base
 WORKDIR /usr/src/app
+ENV HUSKY=0
 
 # Install netcat and psql client for database health checks/seeding
 RUN apk add --no-cache netcat-openbsd postgresql-client

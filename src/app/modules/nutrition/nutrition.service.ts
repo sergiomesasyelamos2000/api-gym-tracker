@@ -169,7 +169,7 @@ export class NutritionService {
     }
   }
 
-  private async getUserContext(userId: string): Promise<UserContext | undefined> {
+  async getUserContext(userId: string): Promise<UserContext | undefined> {
     const now = Date.now();
     const cached = this.userContextCache.get(userId);
     if (cached && cached.expiresAt > now) {

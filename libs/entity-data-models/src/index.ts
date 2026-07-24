@@ -47,6 +47,7 @@ export * from './dtos/shopping-list.dto';
 export * from './dtos/favorite-product.dto';
 export * from './dtos/custom-product.dto';
 export * from './dtos/custom-meal.dto';
+export * from './dtos/nutrition-plan.dto';
 export * from './dtos/external-api.model';
 export * from './dtos/recognition.dto';
 
@@ -66,4 +67,5 @@ export { ShoppingListItemEntity } from './entities/shopping-list-item.entity';
 export { FavoriteProductEntity } from './entities/favorite-product.entity';
 export { CustomProductEntity } from './entities/custom-product.entity';
 export { CustomMealEntity } from './entities/custom-meal.entity';
+export { NutritionPlanEntity } from './entities/nutrition-plan.entity';
 export { SubscriptionEntity } from './entities/subscription.entity';

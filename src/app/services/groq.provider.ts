@@ -4,6 +4,7 @@ import { ENV } from '../../environments/environment';
 import {
   AIProvider,
   ChatMessage,
+  ChatOptions,
   ChatResponse,
   UserContext,
 } from './ai-provider.base';
@@ -22,9 +23,17 @@ export class GroqProvider extends AIProvider {
   async chat(
     messages: ChatMessage[],
     userContext?: UserContext,
+    options?: ChatOptions,
   ): Promise<ChatResponse> {
     try {
-      const systemPrompt = this.buildSystemPrompt(userContext);
+      const systemPrompt = this.buildSystemPrompt(
+        userContext,
+        options?.responseFormat,
+      );
+      const maxTokens =
+        options?.responseFormat === 'json'
+          ? Math.min(options?.maxTokens ?? 2048, 8192)
+          : options?.maxTokens ?? 2048;
 
       // Convert messages to Groq format
       const groqMessages = [
@@ -41,10 +50,13 @@ export class GroqProvider extends AIProvider {
       const completion = await this.client.chat.completions.create({
         messages: groqMessages,
         model: 'llama-3.1-8b-instant', // Smaller, faster model with lower token limits
-        temperature: 0.7,
-        max_tokens: 2048,
+        temperature: options?.temperature ?? 0.7,
+        max_tokens: maxTokens,
         top_p: 1,
         stream: false,
+        ...(options?.responseFormat === 'json'
+          ? { response_format: { type: 'json_object' as const } }
+          : {}),
       });
 
       const responseText =
