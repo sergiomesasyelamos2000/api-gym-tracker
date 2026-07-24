@@ -3,6 +3,8 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
+  ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -11,6 +13,7 @@ import {
   NutritionPlanMacroSnapshotDto,
 } from '../dtos/nutrition-plan.dto';
 import { NutritionPlanStatus } from '../dtos/shared-types';
+import { UserEntity } from './user.entity';
 
 @Entity('nutrition_plans')
 @Index(['userId', 'status'])
@@ -19,8 +22,12 @@ export class NutritionPlanEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column()
+  @Column({ type: 'uuid' })
   userId!: string;
+
+  @ManyToOne(() => UserEntity, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'userId', referencedColumnName: 'id' })
+  user!: UserEntity;
 
   @Column()
   name!: string;

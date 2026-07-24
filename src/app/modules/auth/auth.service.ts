@@ -23,6 +23,7 @@ import {
   CustomProductEntity,
   CustomMealEntity,
   ShoppingListItemEntity,
+  NutritionPlanEntity,
 } from '@app/entity-data-models';
 import type { AppleLoginDto } from '@app/entity-data-models/dtos/frontend-types';
 import type { AuthResponse, AuthTokens, UserResponse } from '@sergiomesasyelamos2000/shared';
@@ -555,6 +556,7 @@ export class AuthService {
       await manager.delete(CustomProductEntity, { userId });
       await manager.delete(CustomMealEntity, { userId });
       await manager.delete(ShoppingListItemEntity, { userId });
+      await manager.delete(NutritionPlanEntity, { userId });
       await manager.delete(UserEntity, { id: userId });
     });
   }
