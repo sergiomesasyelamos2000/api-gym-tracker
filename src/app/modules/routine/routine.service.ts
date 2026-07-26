@@ -97,11 +97,12 @@ export class RoutineService {
 
     const fullRoutine = await this.routineRepository.findOne({
       where: { id: savedRoutine.id },
-      relations: [
-        'routineExercises',
-        'routineExercises.exercise',
-        'routineExercises.sets',
-      ],
+      relations: {
+        routineExercises: {
+          exercise: true,
+          sets: true,
+        },
+      },
       order: {
         routineExercises: {
           order: 'ASC',
@@ -123,11 +124,12 @@ export class RoutineService {
   ): Promise<RoutineEntity | null> {
     return await this.routineRepository.findOne({
       where: { id, userId },
-      relations: [
-        'routineExercises',
-        'routineExercises.exercise',
-        'routineExercises.sets',
-      ],
+      relations: {
+        routineExercises: {
+          exercise: true,
+          sets: true,
+        },
+      },
       // 🔥 NUEVO: Ordenar por el campo order
       order: {
         routineExercises: {
@@ -155,7 +157,7 @@ export class RoutineService {
     // Using relation criteria in delete can be unreliable depending on TypeORM translation.
     const existingRoutineExercises = await this.routineExerciseRepository.find({
       where: { routine: { id } },
-      select: ['id'],
+      select: { id: true },
     });
 
     const existingRoutineExerciseIds = existingRoutineExercises
@@ -245,7 +247,7 @@ export class RoutineService {
     const baseTitle = original.title.replace(/\s\(\d+\)$/, '');
     const allCopies = await this.routineRepository.find({
       where: [{ title: baseTitle }, { title: Like(`${baseTitle} (%)`) }],
-      select: ['title'],
+      select: { title: true },
     });
 
     let maxNumber = 1;
@@ -316,11 +318,12 @@ export class RoutineService {
     // Retornar rutina completa
     const fullRoutine = await this.routineRepository.findOne({
       where: { id: savedRoutine.id },
-      relations: [
-        'routineExercises',
-        'routineExercises.exercise',
-        'routineExercises.sets',
-      ],
+      relations: {
+        routineExercises: {
+          exercise: true,
+          sets: true,
+        },
+      },
       order: {
         routineExercises: {
           order: 'ASC',
@@ -334,7 +337,12 @@ export class RoutineService {
   async findOne(id: string): Promise<RoutineEntity> {
     const routine = await this.routineRepository.findOne({
       where: { id },
-      relations: ['exercises'],
+      relations: {
+        routineExercises: {
+          exercise: true,
+          sets: true,
+        },
+      },
     });
     if (!routine) {
       throw new Error(`Routine with id ${id} not found`);
@@ -359,7 +367,10 @@ export class RoutineService {
   ): Promise<RoutineSessionEntity> {
     const routine = await this.routineRepository.findOne({
       where: { id: dto.routineId, userId },
-      relations: ['routineExercises', 'sessions'],
+      relations: {
+        routineExercises: true,
+        sessions: true,
+      },
     });
 
     if (!routine) throw new Error(`Routine with id ${dto.routineId} not found`);
@@ -369,7 +380,12 @@ export class RoutineService {
       (dto.exercises ?? []).map(async ex => {
         const exercise = await this.exerciseRepository.findOne({
           where: { id: ex.exerciseId },
-          select: ['id', 'name', 'imageUrl', 'giftUrl'], // Incluir las URLs
+          select: {
+            id: true,
+            name: true,
+            imageUrl: true,
+            giftUrl: true,
+          },
         });
         if (!exercise)
           throw new Error(`Exercise with id ${ex.exerciseId} not found`);

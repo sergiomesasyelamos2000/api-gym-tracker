@@ -66,7 +66,7 @@ export class NutritionService {
 
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      select: ['id', 'aiChatUsageCount'],
+      select: { id: true, aiChatUsageCount: true },
     });
 
     const used = user?.aiChatUsageCount ?? 0;
