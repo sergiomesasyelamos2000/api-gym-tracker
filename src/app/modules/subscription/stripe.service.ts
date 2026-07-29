@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SubscriptionPlan } from '@app/entity-data-models';
 import Stripe from 'stripe';
 
 @Injectable()
@@ -23,15 +24,17 @@ export class StripeService {
   async createCheckoutSession(
     customerId: string,
     priceId: string,
+    plan: SubscriptionPlan,
     metadata: Record<string, string>,
     successUrl: string,
     cancelUrl: string,
   ): Promise<Stripe.Checkout.Session> {
     this.logger.log(
-      `Creating checkout session for customer: ${customerId}, price: ${priceId}`,
+      `Creating checkout session for customer: ${customerId}, plan: ${plan}, price: ${priceId}`,
     );
 
-    const isLifetime = priceId.includes('lifetime');
+    const mode =
+      plan === SubscriptionPlan.LIFETIME ? 'payment' : 'subscription';
 
     const sessionParams: Stripe.Checkout.SessionCreateParams = {
       customer: customerId,
@@ -42,7 +45,7 @@ export class StripeService {
           quantity: 1,
         },
       ],
-      mode: isLifetime ? 'payment' : 'subscription',
+      mode,
       success_url: successUrl,
       cancel_url: cancelUrl,
       metadata,
@@ -141,7 +144,9 @@ export class StripeService {
         webhookSecret,
       );
     } catch (error) {
-      this.logger.error(`Webhook signature verification failed: ${error.message}`);
+      const message =
+        error instanceof Error ? error.message : String(error);
+      this.logger.error(`Webhook signature verification failed: ${message}`);
       throw error;
     }
   }

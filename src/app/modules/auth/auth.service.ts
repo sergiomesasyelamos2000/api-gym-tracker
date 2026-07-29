@@ -283,7 +283,12 @@ export class AuthService {
 
     const payload = await this.verifyAppleIdentityToken(dto.identityToken);
     const appleId = payload.sub;
-    const email = payload.email?.trim().toLowerCase();
+    // Prefer client email from first-time Apple credential when JWT omits it.
+    const email =
+      payload.email?.trim().toLowerCase() ||
+      dto.email?.trim().toLowerCase() ||
+      undefined;
+
     let user = await this.userRepository.findOne({
       where: email ? [{ appleId }, { email }] : { appleId },
     });
@@ -297,7 +302,13 @@ export class AuthService {
       }
 
       const displayName = this.resolveAppleDisplayName(dto, email);
-      if (displayName && (!user.name || user.name.trim().length === 0)) {
+      const appleProvidedFullName = this.hasAppleFullName(dto);
+      if (
+        displayName &&
+        (appleProvidedFullName
+          ? this.shouldReplaceAppleDisplayName(user.name, user.email)
+          : !user.name || user.name.trim().length === 0)
+      ) {
         user.name = displayName;
       }
     } else {
@@ -682,6 +693,42 @@ export class AuthService {
     return code;
   }
 
+  private isApplePrivateRelayEmail(email?: string): boolean {
+    if (!email) return false;
+    return email.trim().toLowerCase().endsWith('@privaterelay.appleid.com');
+  }
+
+  private hasAppleFullName(dto: AppleLoginDto): boolean {
+    return !!(
+      dto.fullName?.givenName?.trim() || dto.fullName?.familyName?.trim()
+    );
+  }
+
+  private isLikelyApplePlaceholderName(
+    name?: string | null,
+    email?: string | null,
+  ): boolean {
+    const trimmed = name?.trim() ?? '';
+    if (!trimmed) return true;
+    if (trimmed.toLowerCase() === 'usuario apple') return true;
+
+    if (email) {
+      const localPart = email.split('@')[0]?.trim().toLowerCase();
+      if (localPart && trimmed.toLowerCase() === localPart) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private shouldReplaceAppleDisplayName(
+    currentName?: string | null,
+    currentEmail?: string | null,
+  ): boolean {
+    return this.isLikelyApplePlaceholderName(currentName, currentEmail);
+  }
+
   private resolveAppleDisplayName(
     dto: AppleLoginDto,
     fallbackEmail?: string,
@@ -696,8 +743,12 @@ export class AuthService {
       return fullName;
     }
 
-    if (fallbackEmail) {
-      return fallbackEmail.split('@')[0];
+    // Never use private-relay local-part as a display name (looks like a random id).
+    if (fallbackEmail && !this.isApplePrivateRelayEmail(fallbackEmail)) {
+      const localPart = fallbackEmail.split('@')[0]?.trim();
+      if (localPart) {
+        return localPart;
+      }
     }
 
     return 'Usuario Apple';

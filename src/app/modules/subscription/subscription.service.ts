@@ -129,6 +129,11 @@ export class SubscriptionService {
 
     // Get price ID based on plan
     const priceId = this.getPriceIdForPlan(dto.planId);
+    if (!priceId) {
+      throw new BadRequestException(
+        `Stripe price not configured for plan: ${dto.planId}`,
+      );
+    }
 
     // Create checkout session
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:8081';
@@ -138,6 +143,7 @@ export class SubscriptionService {
     const session = await this.stripeService.createCheckoutSession(
       subscription.stripeCustomerId!,
       priceId,
+      dto.planId,
       {
         userId,
         planId: dto.planId,
