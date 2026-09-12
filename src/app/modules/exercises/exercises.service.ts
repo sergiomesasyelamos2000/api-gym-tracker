@@ -85,6 +85,11 @@ export class ExercisesService implements OnModuleInit {
     traps: 'Trapecios',
     delts: 'Deltoides',
     pecs: 'Pectorales',
+    pectorals: 'Pectorales',
+    deltoids: 'Deltoides',
+    serratus: 'Serrato',
+    'body weight': 'Peso corporal',
+    'leverage machine': 'Máquina',
 
     // Equipamiento
     barbell: 'Barra',

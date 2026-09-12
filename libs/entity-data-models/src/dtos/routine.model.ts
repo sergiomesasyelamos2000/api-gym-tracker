@@ -47,6 +47,7 @@ export interface RoutineResponseDto {
   isPublic: boolean;
   createdAt: Date;
   updatedAt: Date;
+  sortOrder?: number;
   routineExercises: RoutineExerciseResponseDto[];
   userId?: string;
   category?: string;

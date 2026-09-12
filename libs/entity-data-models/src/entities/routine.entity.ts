@@ -16,6 +16,7 @@ import { UserEntity } from './user.entity';
 
 @Entity()
 @Index(['userId', 'createdAt'])
+@Index(['userId', 'sortOrder'])
 export class RoutineEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -25,6 +26,10 @@ export class RoutineEntity {
 
   @Column({ type: 'int', default: 0 })
   totalTime!: number; // en segundos
+
+  /** Lower values appear first in the user's routine list. */
+  @Column({ type: 'int', default: 0 })
+  sortOrder!: number;
 
   @Column()
   @Index()

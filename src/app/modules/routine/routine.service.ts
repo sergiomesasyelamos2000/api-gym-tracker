@@ -8,7 +8,7 @@ import {
   SetType,
   SetEntity,
 } from '@app/entity-data-models';
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Like, Repository } from 'typeorm';
 
@@ -33,13 +33,34 @@ export class RoutineService {
     private readonly sessionRepository: Repository<RoutineSessionEntity>,
   ) {}
 
+  private async getNextTopSortOrder(userId: string): Promise<number> {
+    const result = await this.routineRepository
+      .createQueryBuilder('routine')
+      .select('MIN(routine.sortOrder)', 'min')
+      .where('routine.userId = :userId', { userId })
+      .getRawOne<{ min: string | number | null }>();
+
+    const min =
+      result?.min === null || result?.min === undefined
+        ? null
+        : Number(result.min);
+
+    if (min === null || Number.isNaN(min)) {
+      return 0;
+    }
+
+    return min - 1;
+  }
+
   async create(
     routineRequestDto: RoutineRequestDto,
     userId: string,
   ): Promise<RoutineEntity> {
+    const sortOrder = await this.getNextTopSortOrder(userId);
     const routine = this.routineRepository.create({
       title: routineRequestDto.title,
       userId,
+      sortOrder,
     });
 
     const savedRoutine = await this.routineRepository.save(routine);
@@ -261,9 +282,11 @@ export class RoutineService {
 
     const newTitle = `${baseTitle} (${maxNumber + 1})`;
 
+    const sortOrder = await this.getNextTopSortOrder(userId);
     const newRoutine = this.routineRepository.create({
       title: newTitle,
       userId,
+      sortOrder,
     });
     const savedRoutine = await this.routineRepository.save(newRoutine);
 
@@ -353,7 +376,37 @@ export class RoutineService {
   async findAll(userId: string): Promise<RoutineEntity[]> {
     return this.routineRepository.find({
       where: { userId },
-      order: { createdAt: 'DESC' },
+      order: { sortOrder: 'ASC', createdAt: 'DESC' },
+    });
+  }
+
+  async reorder(userId: string, routineIds: string[]): Promise<void> {
+    if (!Array.isArray(routineIds) || routineIds.length === 0) {
+      throw new BadRequestException('routineIds must be a non-empty array');
+    }
+
+    const uniqueIds = [...new Set(routineIds)];
+    if (uniqueIds.length !== routineIds.length) {
+      throw new BadRequestException('routineIds must not contain duplicates');
+    }
+
+    const owned = await this.routineRepository.find({
+      where: { userId, id: In(uniqueIds) },
+      select: { id: true },
+    });
+
+    if (owned.length !== uniqueIds.length) {
+      throw new BadRequestException(
+        'One or more routines do not belong to the current user',
+      );
+    }
+
+    await this.routineRepository.manager.transaction(async manager => {
+      await Promise.all(
+        routineIds.map((id, index) =>
+          manager.update(RoutineEntity, { id, userId }, { sortOrder: index }),
+        ),
+      );
     });
   }
 
@@ -392,9 +445,10 @@ export class RoutineService {
 
         return {
           exerciseId: exercise.id,
-          name: exercise.name,
-          imageUrl: exercise.imageUrl, // ✅ Incluir imageUrl
-          giftUrl: exercise.giftUrl, // ✅ Incluir giftUrl
+          name: ex.name || ex.exerciseName || exercise.name,
+          imageUrl: ex.imageUrl || exercise.imageUrl,
+          giftUrl: ex.giftUrl || exercise.giftUrl,
+          restSeconds: ex.restSeconds,
           sets: ex.sets,
         };
       }),

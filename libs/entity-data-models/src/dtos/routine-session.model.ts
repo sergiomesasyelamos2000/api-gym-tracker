@@ -18,9 +18,13 @@ export class RoutineSessionRequestDto {
   @IsArray()
   exercises?: {
     exerciseId: string;
-    exerciseName: string;
-    totalWeight: number;
-    totalReps: number;
+    exerciseName?: string;
+    name?: string;
+    imageUrl?: string;
+    giftUrl?: string;
+    restSeconds?: string;
+    totalWeight?: number;
+    totalReps?: number;
     sets: {
       weight: number;
       reps: number;

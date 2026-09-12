@@ -88,6 +88,15 @@ export class RoutineController {
     return mapRoutineListToContract(routines);
   }
 
+  @Put('reorder')
+  @HttpCode(204)
+  async reorderRoutines(
+    @Body() body: { routineIds?: string[] },
+    @CurrentUser() user: CurrentUserData,
+  ): Promise<void> {
+    await this.routineService.reorder(user.id, body?.routineIds ?? []);
+  }
+
   @Get(':id')
   async findOne(
     @Param('id') id: string,

@@ -23,11 +23,15 @@ export class RoutineSessionEntity {
   exercises!: {
     exerciseId: string;
     name: string;
+    imageUrl?: string;
+    giftUrl?: string;
+    restSeconds?: string;
     sets: {
       weight: number;
       reps: number;
       completed: boolean;
       isRecord?: boolean;
+      setType?: string;
     }[];
   }[];
 
