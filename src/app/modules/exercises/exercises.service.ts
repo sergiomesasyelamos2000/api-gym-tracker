@@ -693,26 +693,28 @@ export class ExercisesService implements OnModuleInit {
           `No se pudo procesar imagen para ${data.name}: ${error.message}`,
         );
 
-        // Mantener URL remota para no dejar imageUrl vacío
-        entity.imageUrl = fullImageUrl;
+        // Keep remote URL only when it is not a GIF (client rejects GIF imageUrl).
+        if (!this.isGifLikeImageValue(fullImageUrl)) {
+          entity.imageUrl = fullImageUrl;
+        }
 
-        // Si falla la imagen, intentar usar el GIF como backup
+        // Si falla la imagen, intentar convertir el GIF a PNG estático
         if (gifUrl) {
           try {
             const gifBuffer = await this.downloadAndConvertImage(gifUrl);
             entity.imageUrl = gifBuffer.toString('base64');
             this.logger.debug(
-              `Usando GIF como imagen de respaldo para ${data.name}`,
+              `Usando GIF convertido a PNG para ${data.name}`,
             );
           } catch (gifError) {
             this.logger.warn(
-              `Tampoco se pudo usar el GIF: ${gifError.message}`,
+              `Tampoco se pudo convertir el GIF: ${gifError.message}`,
             );
           }
         }
       }
     } else if (gifUrl) {
-      // Si no hay imageUrl, usar el GIF directamente
+      // Si no hay imageUrl, convertir el GIF al primer frame PNG
       try {
         const gifBuffer = await this.downloadAndConvertImage(gifUrl);
         entity.imageUrl = gifBuffer.toString('base64');
@@ -720,12 +722,113 @@ export class ExercisesService implements OnModuleInit {
         this.logger.warn(
           `No se pudo procesar GIF para ${data.name}: ${error.message}`,
         );
-        // Mantener URL remota para no perder imagen en cliente
-        entity.imageUrl = gifUrl;
+        // Never store GIF URL in imageUrl — client treats it as animated and drops it.
+        entity.imageUrl = undefined;
       }
     }
 
     return entity;
+  }
+
+  /**
+   * Backfill static PNG base64 into imageUrl from giftUrl for rows missing a usable static image.
+   */
+  async backfillStaticImagesFromGifs(options?: {
+    batchSize?: number;
+    limit?: number;
+  }): Promise<{
+    processed: number;
+    updated: number;
+    skipped: number;
+    failed: number;
+  }> {
+    const batchSize = Math.max(1, options?.batchSize ?? 25);
+    const limit = options?.limit;
+
+    const exercises = await this.exerciseRepository.find({
+      select: ['id', 'name', 'giftUrl', 'imageUrl'],
+      order: { id: 'ASC' },
+    });
+
+    let candidates = exercises.filter(
+      (exercise) =>
+        Boolean(exercise.giftUrl?.trim()) &&
+        this.needsStaticImageBackfill(exercise.imageUrl),
+    );
+
+    if (typeof limit === 'number' && limit > 0) {
+      candidates = candidates.slice(0, limit);
+    }
+
+    let updated = 0;
+    let failed = 0;
+
+    this.logger.log(
+      `🖼️ Backfill estáticas: ${candidates.length} candidatos (batch=${batchSize})`,
+    );
+
+    for (let i = 0; i < candidates.length; i += batchSize) {
+      const batch = candidates.slice(i, i + batchSize);
+
+      for (const exercise of batch) {
+        const giftUrl = exercise.giftUrl!.trim();
+        try {
+          const pngBuffer = await this.downloadAndConvertImage(giftUrl);
+          await this.exerciseRepository.update(exercise.id, {
+            imageUrl: pngBuffer.toString('base64'),
+          });
+          updated += 1;
+          this.logger.debug(
+            `Backfill OK ${exercise.id} (${exercise.name ?? 'sin nombre'})`,
+          );
+        } catch (error) {
+          failed += 1;
+          this.logger.warn(
+            `Backfill falló ${exercise.id}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+    }
+
+    const skipped = exercises.length - candidates.length;
+    this.logger.log(
+      `🖼️ Backfill terminado: processed=${candidates.length} updated=${updated} failed=${failed} skipped=${skipped}`,
+    );
+
+    return {
+      processed: candidates.length,
+      updated,
+      skipped,
+      failed,
+    };
+  }
+
+  private needsStaticImageBackfill(imageUrl?: string | null): boolean {
+    if (!imageUrl || !imageUrl.trim()) {
+      return true;
+    }
+    return this.isGifLikeImageValue(imageUrl);
+  }
+
+  private isGifLikeImageValue(value: string): boolean {
+    const trimmed = value.trim();
+    if (!trimmed) return true;
+
+    const lower = trimmed.toLowerCase();
+    if (lower.startsWith('data:image/gif')) return true;
+    if (lower.includes('format=gif')) return true;
+    if (/\.gif(\?|#|$)/i.test(trimmed)) return true;
+    if (/\/gifs?\//i.test(trimmed)) return true;
+
+    // GIF magic bytes in base64 (with or without data: prefix)
+    const base64Payload = lower.startsWith('data:')
+      ? lower.slice(lower.indexOf(',') + 1)
+      : lower;
+    if (base64Payload.startsWith('r0lgod')) return true;
+
+    return false;
   }
 
   private resolveFirstString(

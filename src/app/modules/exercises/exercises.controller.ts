@@ -104,4 +104,25 @@ export class ExercisesController {
     await this.invalidateExercisesCache();
     return result;
   }
+
+  @Post('sync/backfill-static-images')
+  async backfillStaticImages(
+    @Query('batchSize') batchSize?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const parsedBatchSize = batchSize ? Number(batchSize) : undefined;
+    const parsedLimit = limit ? Number(limit) : undefined;
+    const result = await this.exercisesService.backfillStaticImagesFromGifs({
+      batchSize:
+        Number.isFinite(parsedBatchSize) && (parsedBatchSize as number) > 0
+          ? (parsedBatchSize as number)
+          : undefined,
+      limit:
+        Number.isFinite(parsedLimit) && (parsedLimit as number) > 0
+          ? (parsedLimit as number)
+          : undefined,
+    });
+    await this.invalidateExercisesCache();
+    return result;
+  }
 }
