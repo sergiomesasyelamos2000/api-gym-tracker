@@ -15,6 +15,22 @@ export class RoutineSessionRequestDto {
   completedSets!: number;
 
   @IsOptional()
+  @IsNumber()
+  avgHeartRate?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  maxHeartRate?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  caloriesBurned?: number | null;
+
+  @IsOptional()
+  @IsString()
+  healthMetricsSource?: string | null;
+
+  @IsOptional()
   @IsArray()
   exercises?: {
     exerciseId: string;

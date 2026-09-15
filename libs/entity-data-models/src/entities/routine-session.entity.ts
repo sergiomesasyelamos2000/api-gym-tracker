@@ -44,6 +44,18 @@ export class RoutineSessionEntity {
   @Column({ type: 'int' })
   completedSets!: number;
 
+  @Column({ type: 'float', nullable: true })
+  avgHeartRate?: number | null;
+
+  @Column({ type: 'float', nullable: true })
+  maxHeartRate?: number | null;
+
+  @Column({ type: 'float', nullable: true })
+  caloriesBurned?: number | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  healthMetricsSource?: string | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 }

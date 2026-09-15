@@ -460,6 +460,10 @@ export class RoutineService {
       totalTime: dto.totalTime,
       totalWeight: dto.totalWeight,
       completedSets: dto.completedSets,
+      avgHeartRate: dto.avgHeartRate ?? null,
+      maxHeartRate: dto.maxHeartRate ?? null,
+      caloriesBurned: dto.caloriesBurned ?? null,
+      healthMetricsSource: dto.healthMetricsSource ?? null,
     });
 
     return this.sessionRepository.save(session);
@@ -484,6 +488,31 @@ export class RoutineService {
       .where('routine.userId = :userId', { userId })
       .orderBy('session.createdAt', 'DESC')
       .getMany();
+  }
+
+  /** Slim rows for macros/TDEE — avoids shipping full exercise JSON. */
+  async getAllSessionBurnSummaries(
+    userId: string,
+  ): Promise<
+    Array<{ id: string; createdAt: Date; caloriesBurned: number | null }>
+  > {
+    const rows = await this.sessionRepository
+      .createQueryBuilder('session')
+      .innerJoin('session.routine', 'routine')
+      .select([
+        'session.id',
+        'session.createdAt',
+        'session.caloriesBurned',
+      ])
+      .where('routine.userId = :userId', { userId })
+      .orderBy('session.createdAt', 'DESC')
+      .getMany();
+
+    return rows.map(row => ({
+      id: row.id,
+      createdAt: row.createdAt,
+      caloriesBurned: row.caloriesBurned ?? null,
+    }));
   }
 
   async getGlobalStats(userId: string): Promise<RoutineGlobalStats> {

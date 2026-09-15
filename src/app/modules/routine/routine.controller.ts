@@ -7,6 +7,7 @@ import type {
   GlobalRoutineStats,
   RoutineResponse,
   RoutineSession,
+  RoutineSessionBurnSummary,
 } from '@sergiomesasyelamos2000/shared';
 import {
   Body,
@@ -18,6 +19,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -58,7 +60,21 @@ export class RoutineController {
   }
 
   @Get('sessions')
-  async getAllSessions(@CurrentUser() user: CurrentUserData): Promise<RoutineSession[]> {
+  async getAllSessions(
+    @CurrentUser() user: CurrentUserData,
+    @Query('fields') fields?: string,
+  ): Promise<RoutineSession[] | RoutineSessionBurnSummary[]> {
+    if (fields === 'burn') {
+      const rows = await this.routineService.getAllSessionBurnSummaries(user.id);
+      return rows.map(row => ({
+        id: row.id,
+        createdAt:
+          row.createdAt instanceof Date
+            ? row.createdAt.toISOString()
+            : row.createdAt,
+        caloriesBurned: row.caloriesBurned,
+      }));
+    }
     const result = await this.routineService.getAllSessions(user.id);
     return mapSessionListToContract(result);
   }

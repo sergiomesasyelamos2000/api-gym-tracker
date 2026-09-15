@@ -389,6 +389,10 @@ export interface RoutineSessionEntity {
   totalTime: number;
   totalWeight: number;
   completedSets: number;
+  avgHeartRate?: number | null;
+  maxHeartRate?: number | null;
+  caloriesBurned?: number | null;
+  healthMetricsSource?: string | null;
   createdAt: Date;
   _isPending?: boolean;
 }
