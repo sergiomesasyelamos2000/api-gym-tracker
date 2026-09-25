@@ -12,7 +12,7 @@ import {
   UserContext,
 } from './ai-provider.base';
 
-const PRIMARY_PROVIDER_TIMEOUT_MS = 8000;
+const PRIMARY_PROVIDER_TIMEOUT_MS = 15000;
 const FALLBACK_PROVIDER_TIMEOUT_MS = 6000;
 
 // Shared API keys: keep AI calls serialized enough to avoid free-tier 429 storms.

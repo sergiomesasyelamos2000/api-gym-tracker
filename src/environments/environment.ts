@@ -26,6 +26,8 @@ export const ENV = {
   // API Keys
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
   GROQ_API_KEY: process.env.GROQ_API_KEY || '',
+  /** Groq chat model. Override via GROQ_MODEL without code changes. */
+  GROQ_MODEL: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
   LOGMEAL_API_KEY: process.env.LOGMEAL_API_KEY || '',
   RAPIDAPI_KEY: process.env.RAPIDAPI_KEY || '',
 

@@ -601,6 +601,8 @@ export class AuthService {
       email: user.email,
       name: user.name,
       picture: user.picture,
+      googleId: user.googleId,
+      appleId: user.appleId,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
@@ -704,6 +706,27 @@ export class AuthService {
     );
   }
 
+  /** Apple identity `sub` style: 001234.abcdef....1234 */
+  private static readonly APPLE_SUB_NAME_RE = /^\d{6}\.[a-z0-9]+\.\d+$/i;
+
+  /** Long alphanumeric/hex token with no spaces — typical relay local-part / opaque id */
+  private static readonly APPLE_OPAQUE_ID_NAME_RE = /^[a-z0-9._-]{10,}$/i;
+
+  private looksLikeAppleAssignedId(name: string): boolean {
+    const trimmed = name.trim();
+    if (!trimmed || /\s/.test(trimmed)) return false;
+    if (AuthService.APPLE_SUB_NAME_RE.test(trimmed)) return true;
+    if (
+      AuthService.APPLE_OPAQUE_ID_NAME_RE.test(trimmed) &&
+      !/[aeiouáéíóú]/i.test(trimmed)
+    ) {
+      return true;
+    }
+    return (
+      AuthService.APPLE_OPAQUE_ID_NAME_RE.test(trimmed) && trimmed.length >= 16
+    );
+  }
+
   private isLikelyApplePlaceholderName(
     name?: string | null,
     email?: string | null,
@@ -717,6 +740,17 @@ export class AuthService {
       if (localPart && trimmed.toLowerCase() === localPart) {
         return true;
       }
+    }
+
+    if (this.looksLikeAppleAssignedId(trimmed)) {
+      return true;
+    }
+
+    if (
+      this.isApplePrivateRelayEmail(email ?? undefined) &&
+      AuthService.APPLE_OPAQUE_ID_NAME_RE.test(trimmed)
+    ) {
+      return true;
     }
 
     return false;

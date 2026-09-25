@@ -3,20 +3,21 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { ApiProperty } from '@nestjs/swagger';
 import { RoutineExerciseEntity } from './routine-exercise.entity';
-import { ExerciseEntity } from './exercise.entity';
 import { RoutineSessionEntity } from './routine-session.entity';
 import { UserEntity } from './user.entity';
+import { RoutineFolderEntity } from './routine-folder.entity';
 
 @Entity()
 @Index(['userId', 'createdAt'])
 @Index(['userId', 'sortOrder'])
+@Index(['userId', 'folderId', 'sortOrder'])
 export class RoutineEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -27,9 +28,23 @@ export class RoutineEntity {
   @Column({ type: 'int', default: 0 })
   totalTime!: number; // en segundos
 
-  /** Lower values appear first in the user's routine list. */
+  /**
+   * Lower values appear first.
+   * Root routines share sortOrder space with folders; nested routines
+   * use sortOrder only within their folder.
+   */
   @Column({ type: 'int', default: 0 })
   sortOrder!: number;
+
+  @Column({ type: 'uuid', nullable: true })
+  folderId!: string | null;
+
+  @ManyToOne(() => RoutineFolderEntity, folder => folder.routines, {
+    onDelete: 'SET NULL',
+    nullable: true,
+  })
+  @JoinColumn({ name: 'folderId' })
+  folder!: RoutineFolderEntity | null;
 
   @Column()
   @Index()

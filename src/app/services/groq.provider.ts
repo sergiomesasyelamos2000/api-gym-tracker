@@ -12,12 +12,15 @@ import {
 @Injectable()
 export class GroqProvider extends AIProvider {
   private client: Groq;
+  private readonly model: string;
 
   constructor() {
     super();
     this.client = new Groq({
       apiKey: ENV.GROQ_API_KEY,
     });
+    // llama-3.1-8b-instant retired 2026-08-16 for free/dev; official replacement.
+    this.model = ENV.GROQ_MODEL;
   }
 
   async chat(
@@ -49,7 +52,7 @@ export class GroqProvider extends AIProvider {
 
       const completion = await this.client.chat.completions.create({
         messages: groqMessages,
-        model: 'llama-3.1-8b-instant', // Smaller, faster model with lower token limits
+        model: this.model,
         temperature: options?.temperature ?? 0.7,
         max_tokens: maxTokens,
         top_p: 1,
@@ -66,7 +69,7 @@ export class GroqProvider extends AIProvider {
       return {
         content: responseText,
         provider: 'groq',
-        model: 'llama-3.1-8b-instant',
+        model: this.model,
       };
     } catch (error) {
       this.logger.error('Groq API error:', error);

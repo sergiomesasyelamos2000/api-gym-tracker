@@ -55,6 +55,7 @@ export * from './dtos/recognition.dto';
 export { UserEntity } from './entities/user.entity';
 export { ExerciseEntity } from './entities/exercise.entity';
 export { RoutineEntity } from './entities/routine.entity';
+export { RoutineFolderEntity } from './entities/routine-folder.entity';
 export { SetEntity } from './entities/set.entity';
 export { RoutineExerciseEntity } from './entities/routine-exercise.entity';
 export { RoutineSessionEntity } from './entities/routine-session.entity';

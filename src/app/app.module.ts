@@ -10,6 +10,7 @@ import {
   FoodEntryEntity,
   MuscleEntity,
   RoutineEntity,
+  RoutineFolderEntity,
   RoutineExerciseEntity,
   RoutineSessionEntity,
   SetEntity,
@@ -129,6 +130,7 @@ import { ExportService } from './services/export.service';
           ssl: databaseSsl ? { rejectUnauthorized: false } : false,
           entities: [
             RoutineEntity,
+            RoutineFolderEntity,
             ExerciseEntity,
             SetEntity,
             RoutineExerciseEntity,

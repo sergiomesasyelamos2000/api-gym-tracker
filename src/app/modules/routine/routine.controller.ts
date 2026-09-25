@@ -4,7 +4,11 @@ import {
   RoutineSessionRequestDto,
 } from '@app/entity-data-models';
 import type {
+  CreateRoutineFolderRequest,
   GlobalRoutineStats,
+  RenameRoutineFolderRequest,
+  RoutineFolderResponse,
+  RoutineLayoutRequest,
   RoutineResponse,
   RoutineSession,
   RoutineSessionBurnSummary,
@@ -17,6 +21,7 @@ import {
   HttpCode,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Put,
   Query,
@@ -82,9 +87,57 @@ export class RoutineController {
   @Get('stats/global')
   @UseInterceptors(CacheInterceptor)
   @CacheTTL(60)
-  async getGlobalStats(@CurrentUser() user: CurrentUserData): Promise<GlobalRoutineStats> {
+  async getGlobalStats(
+    @CurrentUser() user: CurrentUserData,
+  ): Promise<GlobalRoutineStats> {
     const result = await this.routineService.getGlobalStats(user.id);
     return mapGlobalStatsToContract(result);
+  }
+
+  @Get('folders')
+  async findFolders(
+    @CurrentUser() user: CurrentUserData,
+  ): Promise<RoutineFolderResponse[]> {
+    return this.routineService.findFolders(user.id);
+  }
+
+  @Post('folders')
+  async createFolder(
+    @Body() body: CreateRoutineFolderRequest,
+    @CurrentUser() user: CurrentUserData,
+  ): Promise<RoutineFolderResponse> {
+    return this.routineService.createFolder(user.id, body?.title ?? 'Grupo');
+  }
+
+  @Patch('folders/:id')
+  async renameFolder(
+    @Param('id') id: string,
+    @Body() body: RenameRoutineFolderRequest,
+    @CurrentUser() user: CurrentUserData,
+  ): Promise<RoutineFolderResponse> {
+    return this.routineService.renameFolder(
+      user.id,
+      id,
+      body?.title ?? 'Grupo',
+    );
+  }
+
+  @Delete('folders/:id')
+  @HttpCode(204)
+  async deleteFolder(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserData,
+  ): Promise<void> {
+    await this.routineService.deleteFolder(user.id, id);
+  }
+
+  @Put('layout')
+  @HttpCode(204)
+  async saveLayout(
+    @Body() body: RoutineLayoutRequest,
+    @CurrentUser() user: CurrentUserData,
+  ): Promise<void> {
+    await this.routineService.saveLayout(user.id, body);
   }
 
   @Post()
@@ -99,7 +152,9 @@ export class RoutineController {
   }
 
   @Get()
-  async findAll(@CurrentUser() user: CurrentUserData): Promise<RoutineResponse[]> {
+  async findAll(
+    @CurrentUser() user: CurrentUserData,
+  ): Promise<RoutineResponse[]> {
     const routines = await this.routineService.findAll(user.id);
     return mapRoutineListToContract(routines);
   }
@@ -131,7 +186,11 @@ export class RoutineController {
     @Body() routineRequestDto: RoutineRequestDto,
     @CurrentUser() user: CurrentUserData,
   ): Promise<RoutineResponse> {
-    const updated = await this.routineService.update(id, routineRequestDto, user.id);
+    const updated = await this.routineService.update(
+      id,
+      routineRequestDto,
+      user.id,
+    );
     return mapRoutineToContract(updated);
   }
 
@@ -159,7 +218,10 @@ export class RoutineController {
     @Body() dto: RoutineSessionRequestDto,
     @CurrentUser() user: CurrentUserData,
   ): Promise<RoutineSession> {
-    const session = await this.routineService.addSession({ ...dto, routineId: id }, user.id);
+    const session = await this.routineService.addSession(
+      { ...dto, routineId: id },
+      user.id,
+    );
     return mapSessionToContract(session);
   }
 

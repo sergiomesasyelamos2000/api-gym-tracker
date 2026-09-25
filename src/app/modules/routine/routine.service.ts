@@ -2,15 +2,21 @@ import {
   ExerciseEntity,
   RoutineEntity,
   RoutineExerciseEntity,
+  RoutineFolderEntity,
   RoutineRequestDto,
   RoutineSessionEntity,
   RoutineSessionRequestDto,
   SetType,
   SetEntity,
 } from '@app/entity-data-models';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import type {
+  RoutineFolderResponse,
+  RoutineLayoutRequest,
+} from '@sergiomesasyelamos2000/shared';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Like, Repository } from 'typeorm';
+import { mapFolderToContract } from './mappers/routine-contract.mapper';
 
 type RoutineGlobalStats = {
   totalTime: number;
@@ -23,6 +29,8 @@ export class RoutineService {
   constructor(
     @InjectRepository(RoutineEntity)
     private readonly routineRepository: Repository<RoutineEntity>,
+    @InjectRepository(RoutineFolderEntity)
+    private readonly folderRepository: Repository<RoutineFolderEntity>,
     @InjectRepository(RoutineExerciseEntity)
     private readonly routineExerciseRepository: Repository<RoutineExerciseEntity>,
     @InjectRepository(ExerciseEntity)
@@ -33,23 +41,28 @@ export class RoutineService {
     private readonly sessionRepository: Repository<RoutineSessionEntity>,
   ) {}
 
+  /** Next sortOrder for a new root item (folder or routine), shared space. */
   private async getNextTopSortOrder(userId: string): Promise<number> {
-    const result = await this.routineRepository
-      .createQueryBuilder('routine')
-      .select('MIN(routine.sortOrder)', 'min')
-      .where('routine.userId = :userId', { userId })
-      .getRawOne<{ min: string | number | null }>();
+    const [routineMin, folderMin] = await Promise.all([
+      this.routineRepository
+        .createQueryBuilder('routine')
+        .select('MIN(routine.sortOrder)', 'min')
+        .where('routine.userId = :userId', { userId })
+        .andWhere('routine.folderId IS NULL')
+        .getRawOne<{ min: string | number | null }>(),
+      this.folderRepository
+        .createQueryBuilder('folder')
+        .select('MIN(folder.sortOrder)', 'min')
+        .where('folder.userId = :userId', { userId })
+        .getRawOne<{ min: string | number | null }>(),
+    ]);
 
-    const min =
-      result?.min === null || result?.min === undefined
-        ? null
-        : Number(result.min);
+    const mins = [routineMin?.min, folderMin?.min]
+      .map(v => (v === null || v === undefined ? null : Number(v)))
+      .filter((v): v is number => v !== null && !Number.isNaN(v));
 
-    if (min === null || Number.isNaN(min)) {
-      return 0;
-    }
-
-    return min - 1;
+    if (mins.length === 0) return 0;
+    return Math.min(...mins) - 1;
   }
 
   async create(
@@ -61,6 +74,7 @@ export class RoutineService {
       title: routineRequestDto.title,
       userId,
       sortOrder,
+      folderId: null,
     });
 
     const savedRoutine = await this.routineRepository.save(routine);
@@ -531,5 +545,265 @@ export class RoutineService {
       totalWeight: parseInt(stats.totalWeight) || 0,
       completedSets: parseInt(stats.completedSets) || 0,
     };
+  }
+
+  private async buildFolderResponses(
+    userId: string,
+    folders?: RoutineFolderEntity[],
+  ): Promise<RoutineFolderResponse[]> {
+    const folderRows =
+      folders ??
+      (await this.folderRepository.find({
+        where: { userId },
+        order: { sortOrder: 'ASC', createdAt: 'ASC' },
+      }));
+
+    if (folderRows.length === 0) return [];
+
+    const folderIds = folderRows.map(f => f.id);
+    const nested = await this.routineRepository.find({
+      where: { userId, folderId: In(folderIds) },
+      select: { id: true, folderId: true, sortOrder: true },
+      order: { sortOrder: 'ASC' },
+    });
+
+    const byFolder = new Map<string, string[]>();
+    folderIds.forEach(id => byFolder.set(id, []));
+    nested.forEach(routine => {
+      if (!routine.folderId) return;
+      byFolder.get(routine.folderId)?.push(routine.id);
+    });
+
+    return folderRows.map(folder =>
+      mapFolderToContract(folder, byFolder.get(folder.id) ?? []),
+    );
+  }
+
+  async findFolders(userId: string): Promise<RoutineFolderResponse[]> {
+    return this.buildFolderResponses(userId);
+  }
+
+  async createFolder(
+    userId: string,
+    title: string,
+  ): Promise<RoutineFolderResponse> {
+    const trimmed = (title || 'Grupo').trim() || 'Grupo';
+    const sortOrder = await this.getNextTopSortOrder(userId);
+    const folder = await this.folderRepository.save(
+      this.folderRepository.create({
+        title: trimmed,
+        userId,
+        sortOrder,
+      }),
+    );
+    return mapFolderToContract(folder, []);
+  }
+
+  async renameFolder(
+    userId: string,
+    folderId: string,
+    title: string,
+  ): Promise<RoutineFolderResponse> {
+    const folder = await this.folderRepository.findOne({
+      where: { id: folderId, userId },
+    });
+    if (!folder) {
+      throw new NotFoundException(`Folder with id ${folderId} not found`);
+    }
+    folder.title = (title || 'Grupo').trim() || 'Grupo';
+    const saved = await this.folderRepository.save(folder);
+    const [response] = await this.buildFolderResponses(userId, [saved]);
+    return response;
+  }
+
+  async deleteFolder(userId: string, folderId: string): Promise<void> {
+    const folder = await this.folderRepository.findOne({
+      where: { id: folderId, userId },
+    });
+    if (!folder) {
+      throw new NotFoundException(`Folder with id ${folderId} not found`);
+    }
+
+    await this.routineRepository.manager.transaction(async manager => {
+      const maxRoot = await manager
+        .createQueryBuilder(RoutineEntity, 'routine')
+        .select('MAX(routine.sortOrder)', 'max')
+        .where('routine.userId = :userId', { userId })
+        .andWhere('routine.folderId IS NULL')
+        .getRawOne<{ max: string | number | null }>();
+      const maxFolder = await manager
+        .createQueryBuilder(RoutineFolderEntity, 'folder')
+        .select('MAX(folder.sortOrder)', 'max')
+        .where('folder.userId = :userId', { userId })
+        .andWhere('folder.id != :folderId', { folderId })
+        .getRawOne<{ max: string | number | null }>();
+
+      const maxes = [maxRoot?.max, maxFolder?.max]
+        .map(v => (v === null || v === undefined ? -1 : Number(v)))
+        .filter(v => !Number.isNaN(v));
+      let next = (maxes.length ? Math.max(...maxes) : -1) + 1;
+
+      const nested = await manager.find(RoutineEntity, {
+        where: { userId, folderId },
+        order: { sortOrder: 'ASC' },
+      });
+
+      for (const routine of nested) {
+        await manager.update(
+          RoutineEntity,
+          { id: routine.id, userId },
+          { folderId: null, sortOrder: next },
+        );
+        next += 1;
+      }
+
+      await manager.delete(RoutineFolderEntity, { id: folderId, userId });
+    });
+  }
+
+  async saveLayout(
+    userId: string,
+    layout: RoutineLayoutRequest,
+  ): Promise<void> {
+    const rootOrder = layout?.rootOrder;
+    const folders = layout?.folders;
+
+    if (!Array.isArray(rootOrder) || !Array.isArray(folders)) {
+      throw new BadRequestException('rootOrder and folders must be arrays');
+    }
+
+    const folderIds = folders.map(f => f.id);
+    if (new Set(folderIds).size !== folderIds.length) {
+      throw new BadRequestException('folders must not contain duplicate ids');
+    }
+
+    const rootFolderIds = rootOrder
+      .filter(item => item.type === 'folder')
+      .map(item => item.id);
+    const rootRoutineIds = rootOrder
+      .filter(item => item.type === 'routine')
+      .map(item => item.id);
+
+    if (new Set(rootFolderIds).size !== rootFolderIds.length) {
+      throw new BadRequestException('rootOrder folders must be unique');
+    }
+    if (new Set(rootRoutineIds).size !== rootRoutineIds.length) {
+      throw new BadRequestException('rootOrder routines must be unique');
+    }
+
+    const folderIdSet = new Set(folderIds);
+    if (
+      rootFolderIds.length !== folderIds.length ||
+      rootFolderIds.some(id => !folderIdSet.has(id))
+    ) {
+      throw new BadRequestException(
+        'rootOrder folders must match folders payload exactly',
+      );
+    }
+
+    const nestedRoutineIds = folders.flatMap(f => f.routineIds);
+    if (new Set(nestedRoutineIds).size !== nestedRoutineIds.length) {
+      throw new BadRequestException(
+        'A routine cannot appear in multiple folders',
+      );
+    }
+    if (nestedRoutineIds.some(id => rootRoutineIds.includes(id))) {
+      throw new BadRequestException(
+        'A routine cannot be both in rootOrder and inside a folder',
+      );
+    }
+
+    const allRoutineIds = [...rootRoutineIds, ...nestedRoutineIds];
+
+    if (folderIds.length > 0) {
+      const ownedFolders = await this.folderRepository.find({
+        where: { userId, id: In(folderIds) },
+        select: { id: true },
+      });
+      if (ownedFolders.length !== folderIds.length) {
+        throw new BadRequestException(
+          'One or more folders do not belong to the current user',
+        );
+      }
+    }
+
+    if (allRoutineIds.length > 0) {
+      const ownedRoutines = await this.routineRepository.find({
+        where: { userId, id: In(allRoutineIds) },
+        select: { id: true },
+      });
+      if (ownedRoutines.length !== allRoutineIds.length) {
+        throw new BadRequestException(
+          'One or more routines do not belong to the current user',
+        );
+      }
+    }
+
+    const allOwnedRoutines = await this.routineRepository.find({
+      where: { userId },
+      select: { id: true },
+    });
+    const mentioned = new Set(allRoutineIds);
+    if (allOwnedRoutines.some(r => !mentioned.has(r.id))) {
+      throw new BadRequestException(
+        'Layout must include every routine owned by the user',
+      );
+    }
+
+    const allOwnedFolders = await this.folderRepository.find({
+      where: { userId },
+      select: { id: true },
+    });
+    const mentionedFolders = new Set(folderIds);
+    const foldersToDelete = allOwnedFolders
+      .map(f => f.id)
+      .filter(id => !mentionedFolders.has(id));
+
+    await this.routineRepository.manager.transaction(async manager => {
+      await manager.update(RoutineEntity, { userId }, { folderId: null });
+
+      if (foldersToDelete.length > 0) {
+        await manager.delete(RoutineFolderEntity, {
+          userId,
+          id: In(foldersToDelete),
+        });
+      }
+
+      for (const folder of folders) {
+        const title = (folder.title || 'Grupo').trim() || 'Grupo';
+        await manager.update(
+          RoutineFolderEntity,
+          { id: folder.id, userId },
+          { title },
+        );
+      }
+
+      for (let index = 0; index < rootOrder.length; index += 1) {
+        const item = rootOrder[index];
+        if (item.type === 'folder') {
+          await manager.update(
+            RoutineFolderEntity,
+            { id: item.id, userId },
+            { sortOrder: index },
+          );
+        } else {
+          await manager.update(
+            RoutineEntity,
+            { id: item.id, userId },
+            { folderId: null, sortOrder: index },
+          );
+        }
+      }
+
+      for (const folder of folders) {
+        for (let index = 0; index < folder.routineIds.length; index += 1) {
+          await manager.update(
+            RoutineEntity,
+            { id: folder.routineIds[index], userId },
+            { folderId: folder.id, sortOrder: index },
+          );
+        }
+      }
+    });
   }
 }

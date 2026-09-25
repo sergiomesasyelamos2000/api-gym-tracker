@@ -77,7 +77,7 @@ export class ExercisesService implements OnModuleInit {
     glutes: 'Glúteos',
     hamstrings: 'Isquiotibiales',
     quadriceps: 'Cuádriceps',
-    calves: 'Pantorrillas',
+    calves: 'Gemelos',
     biceps: 'Bíceps',
     triceps: 'Tríceps',
     forearms: 'Antebrazos',
@@ -960,7 +960,7 @@ export class ExercisesService implements OnModuleInit {
         },
         {
           nameEn: 'CALVES',
-          nameEs: 'Pantorrillas',
+          nameEs: 'Gemelos',
           imageUrl: 'https://cdn.exercisedb.dev/bodyparts/calves.webp',
         },
         {

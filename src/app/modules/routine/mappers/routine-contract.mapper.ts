@@ -1,5 +1,6 @@
 import type {
   GlobalRoutineStats,
+  RoutineFolderResponse,
   RoutineResponse,
   RoutineSession,
 } from '@sergiomesasyelamos2000/shared';
@@ -12,6 +13,7 @@ const toIso = (value: unknown): string => {
 
 export const mapRoutineToContract = (routine: any): RoutineResponse => ({
   ...routine,
+  folderId: routine.folderId ?? null,
   createdAt: toIso(routine.createdAt),
   updatedAt: toIso(routine.updatedAt),
   routineExercises: Array.isArray(routine.routineExercises)
@@ -29,6 +31,24 @@ export const mapRoutineToContract = (routine: any): RoutineResponse => ({
 
 export const mapRoutineListToContract = (routines: any[]): RoutineResponse[] =>
   routines.map(mapRoutineToContract);
+
+export const mapFolderToContract = (
+  folder: {
+    id: string;
+    title: string;
+    sortOrder: number;
+    createdAt: Date | string;
+    updatedAt: Date | string;
+  },
+  routineIds: string[],
+): RoutineFolderResponse => ({
+  id: folder.id,
+  title: folder.title,
+  sortOrder: folder.sortOrder,
+  routineIds,
+  createdAt: toIso(folder.createdAt),
+  updatedAt: toIso(folder.updatedAt),
+});
 
 export const mapSessionToContract = (session: any): RoutineSession => ({
   ...session,

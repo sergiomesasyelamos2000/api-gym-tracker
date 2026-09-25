@@ -1,6 +1,7 @@
 import {
   ExerciseEntity,
   RoutineEntity,
+  RoutineFolderEntity,
   RoutineExerciseEntity,
   RoutineSessionEntity,
   SetEntity,
@@ -18,6 +19,7 @@ import { SubscriptionModule } from '../subscription/subscription.module';
   imports: [
     TypeOrmModule.forFeature([
       RoutineEntity,
+      RoutineFolderEntity,
       RoutineExerciseEntity,
       ExerciseEntity,
       SetEntity,
