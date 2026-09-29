@@ -185,6 +185,22 @@ export class ProductService implements OnModuleInit {
   private readonly OFF_USER_AGENT =
     'EvoFitGymTracker/1.0 (https://github.com/sergiomesasyelamos2000; nutrition search; Spain)';
   private readonly OFF_SEED_DELAY_MS = 6500;
+  /** Official Open Food Facts Search-a-licious (primary full-text). Kill-switch via env. */
+  private readonly SEARCH_ALICIOUS_TIMEOUT_MS = 2500;
+  private readonly SEARCH_ALICIOUS_FIELDS = [
+    'code',
+    'product_name',
+    'product_name_es',
+    'brands',
+    'brands_tags',
+    'categories',
+    'nutrition_grades',
+    'image_url',
+    'nutriments',
+    'quantity',
+    'countries_tags',
+    'stores',
+  ] as const;
 
   constructor(
     private readonly httpService: HttpService,
@@ -442,6 +458,190 @@ export class ProductService implements OnModuleInit {
         : null,
       others: [],
     };
+  }
+
+  private isSearchAliciousEnabled(): boolean {
+    const raw = (process.env.SEARCH_ALICIOUS_ENABLED ?? 'true')
+      .trim()
+      .toLowerCase();
+    return !(raw === '0' || raw === 'false' || raw === 'off' || raw === 'no');
+  }
+
+  private getSearchAliciousBaseUrl(): string {
+    return (
+      process.env.SEARCH_ALICIOUS_BASE_URL?.trim() ||
+      'https://search.openfoodfacts.org'
+    ).replace(/\/$/, '');
+  }
+
+  private escapeLuceneFreeText(value: string): string {
+    const cleaned = value.replace(/"/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!cleaned) return '';
+    if (cleaned.includes(' ')) {
+      return `"${cleaned}"`;
+    }
+    return cleaned.replace(/([+\-!(){}\[\]^"~*?:\\/])/g, '\\$1');
+  }
+
+  /**
+   * Build Lucene query for Search-a-licious (Spain-first).
+   * Never filters by stores_tags (unreliable in live index); brands_tags + countries only.
+   */
+  private buildSearchAliciousQuery(searchTerm: string): string | null {
+    const hints = this.extractSpanishQueryHints(searchTerm);
+    let freeText = this.normalizeSearchValue(searchTerm);
+
+    const tokensToStrip = new Set<string>([
+      ...hints.brandTags,
+      ...hints.storeTags,
+      ...Object.keys(this.spanishStoreHints),
+      ...this.spanishBrands,
+    ]);
+    for (const token of tokensToStrip) {
+      const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      freeText = freeText
+        .replace(new RegExp(`\\b${escaped}\\b`, 'gi'), ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    const parts: string[] = [];
+    const luceneText = this.escapeLuceneFreeText(freeText);
+    if (luceneText) {
+      parts.push(luceneText);
+    }
+
+    if (hints.brandTags.length === 1) {
+      parts.push(`brands_tags:"${hints.brandTags[0]}"`);
+    } else if (hints.brandTags.length > 1) {
+      parts.push(
+        `(${hints.brandTags.map(tag => `brands_tags:"${tag}"`).join(' OR ')})`,
+      );
+    }
+
+    parts.push('countries_tags:"en:spain"');
+
+    // Require free-text and/or brand filter (countries alone is invalid / noisy).
+    if (parts.length <= 1) {
+      return null;
+    }
+
+    return parts.join(' AND ');
+  }
+
+  private mapSearchAliciousHit(hit: {
+    code?: string;
+    product_name?: string;
+    product_name_es?: string;
+    brands?: string | string[] | null;
+    categories?: string | null;
+    nutrition_grades?: string | null;
+    image_url?: string | null;
+    quantity?: string | null;
+    nutriments?: Record<string, number | undefined> | null;
+  }): MappedProduct | null {
+    const code = hit.code?.trim();
+    const name =
+      hit.product_name_es?.trim() ||
+      hit.product_name?.trim() ||
+      '';
+    if (!code || !name) {
+      return null;
+    }
+
+    const brand = Array.isArray(hit.brands)
+      ? hit.brands.filter(Boolean).join(', ') || null
+      : hit.brands?.trim() || null;
+
+    const nutriments = hit.nutriments ?? {};
+
+    return {
+      code,
+      name,
+      brand,
+      image: hit.image_url ?? null,
+      nutritionGrade: hit.nutrition_grades ?? null,
+      categories: hit.categories ?? null,
+      servingSize: hit.quantity ?? null,
+      grams: 100,
+      calories: Math.round(nutriments['energy-kcal_100g'] ?? 0),
+      carbohydrates:
+        Math.round((nutriments['carbohydrates_100g'] ?? 0) * 10) / 10,
+      protein: Math.round((nutriments['proteins_100g'] ?? 0) * 10) / 10,
+      fat: Math.round((nutriments['fat_100g'] ?? 0) * 10) / 10,
+      fiber: nutriments['fiber_100g']
+        ? Math.round(nutriments['fiber_100g'] * 10) / 10
+        : null,
+      sugar: nutriments['sugars_100g']
+        ? Math.round(nutriments['sugars_100g'] * 10) / 10
+        : null,
+      sodium: nutriments['sodium_100g']
+        ? Math.round(nutriments['sodium_100g'] * 1000) / 10
+        : null,
+      others: [],
+    };
+  }
+
+  /**
+   * Primary full-text search via Open Food Facts Search-a-licious.
+   * @see https://openfoodfacts.github.io/search-a-licious/
+   */
+  private async searchSearchAliciousByName(
+    searchTerm: string,
+    page: number,
+    pageSize: number,
+  ): Promise<MappedProduct[]> {
+    const q = this.buildSearchAliciousQuery(searchTerm);
+    if (!q) {
+      return [];
+    }
+
+    const url = `${this.getSearchAliciousBaseUrl()}/search`;
+    const body = {
+      q,
+      page,
+      page_size: Math.min(pageSize * 2, 50),
+      langs: ['es', 'en'],
+      boost_phrase: true,
+      fields: [...this.SEARCH_ALICIOUS_FIELDS],
+    };
+    const requestConfig = {
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'User-Agent': this.OFF_USER_AGENT,
+      },
+      timeout: this.SEARCH_ALICIOUS_TIMEOUT_MS,
+    };
+
+    const execute = async () => {
+      const response = await lastValueFrom(
+        this.httpService.post(url, body, requestConfig),
+      );
+      const data = response.data as {
+        timed_out?: boolean;
+        hits?: Array<Record<string, unknown>>;
+      };
+      if (data?.timed_out) {
+        throw new Error('Search-a-licious timed out');
+      }
+      const hits = Array.isArray(data?.hits) ? data.hits : [];
+      return hits
+        .map(hit => this.mapSearchAliciousHit(hit as any))
+        .filter((item): item is MappedProduct => !!item);
+    };
+
+    try {
+      return await execute();
+    } catch (error: any) {
+      const status = error?.response?.status;
+      // One short retry on transient OFF/SAL overload (503/502/429).
+      if (status === 503 || status === 502 || status === 429) {
+        await this.sleep(400);
+        return await execute();
+      }
+      throw error;
+    }
   }
 
   private async preloadPopularCatalogTerms(): Promise<void> {
@@ -1323,40 +1523,61 @@ export class ProductService implements OnModuleInit {
       return hints.brandTags.length > 0 || hints.storeTags.length > 0;
     });
 
-    const offSettled = await Promise.allSettled(
-      primary.map(variant =>
-        this.searchOpenFoodFactsByName(
-          variant,
+    let offProducts: MappedProduct[] = [];
+
+    // Primary: Search-a-licious (official OFF full-text). Industry pattern: provider + fallback.
+    if (this.isSearchAliciousEnabled()) {
+      const salSettled = await Promise.allSettled(
+        primary.slice(0, 1).map(variant =>
+          this.searchSearchAliciousByName(variant, page, pageSize),
+        ),
+      );
+      for (const result of salSettled) {
+        if (result.status === 'fulfilled') {
+          offProducts = this.mergeUniqueProducts([
+            ...offProducts,
+            ...result.value,
+          ]);
+        } else {
+          console.warn(
+            'Search-a-licious search failed:',
+            (result.reason as { message?: string })?.message || result.reason,
+          );
+        }
+      }
+      if (offProducts.length > 0) {
+        console.log(
+          `Search-a-licious ok: ${offProducts.length} hits for "${primary[0]}"`,
+        );
+      }
+    }
+
+    // Fallback cgi only when SAL returned nothing (avoid 503 storms from parallel cgi).
+    if (offProducts.length === 0) {
+      const fallbackVariant = primary[0];
+      try {
+        offProducts = await this.searchOpenFoodFactsByName(
+          fallbackVariant,
           page,
           pageSize,
           'es.openfoodfacts.org',
-        ),
-      ),
-    );
+        );
+      } catch (error) {
+        console.warn(
+          'OFF ES cgi fallback failed:',
+          (error as { message?: string })?.message || error,
+        );
+      }
+    }
 
     // USDA is US-centric; skip it when the query clearly targets Spanish retail brands.
     const usdaSettled = hasSpanishRetailHint
       ? []
       : await Promise.allSettled(
-          primary.map(variant =>
+          primary.slice(0, 1).map(variant =>
             this.searchUSDAProductsByName(variant, page, pageSize),
           ),
         );
-
-    let offProducts: MappedProduct[] = [];
-    for (const result of offSettled) {
-      if (result.status === 'fulfilled') {
-        offProducts = this.mergeUniqueProducts([
-          ...offProducts,
-          ...result.value,
-        ]);
-      } else {
-        console.warn(
-          'OFF ES search failed:',
-          result.reason?.message || result.reason,
-        );
-      }
-    }
 
     let usdaProducts: MappedProduct[] = [];
     for (const result of usdaSettled) {
@@ -1368,29 +1589,28 @@ export class ProductService implements OnModuleInit {
       } else {
         console.warn(
           'USDA search failed:',
-          result.reason?.message || result.reason,
+          (result.reason as { message?: string })?.message || result.reason,
         );
       }
     }
 
-    if (offProducts.length < Math.min(6, pageSize)) {
-      const worldSettled = await Promise.allSettled(
-        primary.map(variant =>
-          this.searchOpenFoodFactsByName(
-            variant,
-            page,
-            pageSize,
-            'world.openfoodfacts.org',
-          ),
-        ),
-      );
-      for (const result of worldSettled) {
-        if (result.status === 'fulfilled') {
-          offProducts = this.mergeUniqueProducts([
-            ...offProducts,
-            ...result.value,
-          ]);
-        }
+    if (offProducts.length === 0) {
+      try {
+        const worldProducts = await this.searchOpenFoodFactsByName(
+          primary[0],
+          page,
+          pageSize,
+          'world.openfoodfacts.org',
+        );
+        offProducts = this.mergeUniqueProducts([
+          ...offProducts,
+          ...worldProducts,
+        ]);
+      } catch (error) {
+        console.warn(
+          'OFF world cgi fallback failed:',
+          (error as { message?: string })?.message || error,
+        );
       }
     }
 

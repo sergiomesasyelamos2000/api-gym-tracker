@@ -192,11 +192,34 @@ CLOUDINARY_CLOUD_NAME=your_cloudinary_name
 CLOUDINARY_API_KEY=your_cloudinary_key
 CLOUDINARY_API_SECRET=your_cloudinary_secret
 
+# Product search — Open Food Facts Search-a-licious (recommended primary)
+# Official full-text search for OFF data (ODbL). Enabled by default; set false as kill-switch.
+# Docs: https://openfoodfacts.github.io/search-a-licious/
+SEARCH_ALICIOUS_ENABLED=true
+SEARCH_ALICIOUS_BASE_URL=https://search.openfoodfacts.org
+
 # Redis Configuration (Optional - defaults shown)
 REDIS_HOST=redis               # Use 'localhost' if running locally
 REDIS_PORT=6379
 ```
 
+### Product search providers (Open Food Facts)
+
+Product name search (`GET /api/nutrition/products/search`) uses a **primary + fallback** pattern (industry standard for external search dependencies):
+
+| Priority | Provider | Role |
+|----------|----------|------|
+| 1 | **Search-a-licious** (`search.openfoodfacts.org`) | Primary full-text (Lucene), Spain-first (`countries_tags:"en:spain"`, optional `brands_tags`) |
+| 2 | **OFF cgi/search.pl** (`es` / `world`) | Fallback if SAL is disabled, times out, or returns thin results |
+| 3 | **USDA FoodData Central** | Optional fill when the query is not Spanish-retail-specific |
+
+**Local-first:** `phase=local` only hits the Postgres catalog (no external call). `phase=full` runs locals then the providers above.
+
+**Kill-switch:** set `SEARCH_ALICIOUS_ENABLED=false` to force legacy cgi/search.pl only (incident response / debugging).
+
+**User-Agent:** all OFF requests send an identifying User-Agent per [Open Food Facts API etiquette](https://openfoodfacts.github.io/openfoodfacts-server/api/).
+
+**Legal:** Open Food Facts product data is under ODbL; do not scrape supermarket private APIs.
 ## 🧩 Services & Components
 
 ### Core Services
