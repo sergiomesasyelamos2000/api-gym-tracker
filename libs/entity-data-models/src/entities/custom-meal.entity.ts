@@ -19,6 +19,8 @@ export interface MealProduct {
   fiber?: number | null;
   sodium?: number | null;
   isCustom?: boolean;
+  /** Snapshot of product thumbnail for meal editing / display */
+  productImage?: string | null;
 }
 
 @Entity('custom_meals')
