@@ -118,6 +118,7 @@ export class ProductService implements OnModuleInit {
   private fatSecretToken: { token: string; expiresAt: number } | null = null;
   private readonly spanishBrands = [
     'hacendado',
+    'milbona',
     'dia',
     'carrefour',
     'lidl',
@@ -125,15 +126,46 @@ export class ProductService implements OnModuleInit {
     'auchan',
     'alcampo',
     'mercadona',
+    'consum',
+    'el corte ingles',
+    'hipercor',
   ];
   private readonly brandSynonyms: Record<string, string[]> = {
     mercadona: ['hacendado'],
     hacendado: ['mercadona'],
     carrefour: ['carrefour bio'],
     lidl: ['milbona'],
+    milbona: ['lidl'],
     dia: ['dia'],
     eroski: ['eroski'],
+    alcampo: ['auchan'],
+    auchan: ['alcampo'],
   };
+  /** Store tags used by Open Food Facts for Spanish retailers */
+  private readonly spanishStoreHints: Record<
+    string,
+    { stores: string[]; brands: string[] }
+  > = {
+    mercadona: { stores: ['mercadona'], brands: ['hacendado'] },
+    hacendado: { stores: ['mercadona'], brands: ['hacendado'] },
+    lidl: { stores: ['lidl'], brands: ['milbona'] },
+    milbona: { stores: ['lidl'], brands: ['milbona'] },
+    carrefour: { stores: ['carrefour'], brands: ['carrefour'] },
+    dia: { stores: ['dia'], brands: ['dia'] },
+    eroski: { stores: ['eroski'], brands: ['eroski'] },
+    alcampo: { stores: ['alcampo'], brands: ['auchan', 'alcampo'] },
+    auchan: { stores: ['alcampo', 'auchan'], brands: ['auchan'] },
+    consum: { stores: ['consum'], brands: ['consum'] },
+  };
+  /** Brands to warm into local catalog from OFF (respect rate limits). */
+  private readonly spanishBrandSeedTags = [
+    'hacendado',
+    'milbona',
+    'dia',
+    'carrefour',
+    'eroski',
+    'auchan',
+  ];
   private readonly preloadSeedTerms = [
     'avena',
     'copos avena',
@@ -145,7 +177,14 @@ export class ProductService implements OnModuleInit {
     'arroz',
     'pasta',
     'pan integral',
+    'yogur natural',
+    'leche desnatada',
+    'aceite oliva',
+    'pollo pechuga',
   ];
+  private readonly OFF_USER_AGENT =
+    'EvoFitGymTracker/1.0 (https://github.com/sergiomesasyelamos2000; nutrition search; Spain)';
+  private readonly OFF_SEED_DELAY_MS = 6500;
 
   constructor(
     private readonly httpService: HttpService,
@@ -249,7 +288,17 @@ export class ProductService implements OnModuleInit {
       if (brand.includes(token)) score += 15;
     }
 
-    if (this.isSpanishBrand(product.brand)) score += 50;
+    // Prefer Spanish supermarket private labels / retailers in ranking.
+    if (this.isSpanishBrand(product.brand)) score += 80;
+    if (
+      brand.includes('hacendado') ||
+      brand.includes('milbona') ||
+      brand.includes('dia') ||
+      brand.includes('carrefour') ||
+      brand.includes('eroski')
+    ) {
+      score += 40;
+    }
     if (product.code?.trim()) score += 10;
     return score;
   }
@@ -270,13 +319,171 @@ export class ProductService implements OnModuleInit {
     });
   }
 
+  private async sleep(ms: number): Promise<void> {
+    await new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Detect Spanish retail brands/stores in the query and strip them from free-text
+   * so OFF can use structured tag filters (more precise for Hacendado/Milbona/etc.).
+   */
+  private extractSpanishQueryHints(searchTerm: string): {
+    textQuery: string;
+    brandTags: string[];
+    storeTags: string[];
+  } {
+    let text = this.normalizeSearchValue(searchTerm);
+    const brandTags = new Set<string>();
+    const storeTags = new Set<string>();
+
+    for (const [token, hint] of Object.entries(this.spanishStoreHints)) {
+      if (!text.includes(token)) continue;
+      for (const store of hint.stores) storeTags.add(store);
+      for (const brand of hint.brands) brandTags.add(brand);
+      text = text
+        .replace(new RegExp(`\\b${token}\\b`, 'gi'), ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    for (const brand of this.spanishBrands) {
+      if (!text.includes(brand)) continue;
+      brandTags.add(brand);
+      const syns = this.brandSynonyms[brand] ?? [];
+      for (const syn of syns) brandTags.add(syn);
+      text = text
+        .replace(new RegExp(`\\b${brand}\\b`, 'gi'), ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    const textQuery = text.length >= 2 ? text : this.normalizeSearchValue(searchTerm);
+    return {
+      textQuery,
+      brandTags: Array.from(brandTags).slice(0, 3),
+      storeTags: Array.from(storeTags).slice(0, 2),
+    };
+  }
+
+  private buildOpenFoodFactsSearchUrl(
+    host: 'es.openfoodfacts.org' | 'world.openfoodfacts.org',
+    searchTerm: string,
+    page: number,
+    pageSize: number,
+    options?: { preferSpain?: boolean },
+  ): string {
+    const hints = this.extractSpanishQueryHints(searchTerm);
+    const params = new URLSearchParams();
+    params.set('search_terms', hints.textQuery || searchTerm);
+    params.set('search_simple', '1');
+    params.set('action', 'process');
+    params.set('json', '1');
+    params.set('page', String(page));
+    params.set('page_size', String(pageSize));
+    params.set('sort_by', 'unique_scans_n');
+    params.set('lc', 'es');
+    params.set(
+      'fields',
+      'product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code,stores,countries',
+    );
+
+    let tagIndex = 0;
+    const preferSpain = options?.preferSpain !== false;
+    if (preferSpain) {
+      params.set(`tagtype_${tagIndex}`, 'countries');
+      params.set(`tag_contains_${tagIndex}`, 'contains');
+      params.set(`tag_${tagIndex}`, 'spain');
+      tagIndex += 1;
+    }
+
+    for (const brand of hints.brandTags) {
+      params.set(`tagtype_${tagIndex}`, 'brands');
+      params.set(`tag_contains_${tagIndex}`, 'contains');
+      params.set(`tag_${tagIndex}`, brand);
+      tagIndex += 1;
+    }
+
+    for (const store of hints.storeTags) {
+      params.set(`tagtype_${tagIndex}`, 'stores');
+      params.set(`tag_contains_${tagIndex}`, 'contains');
+      params.set(`tag_${tagIndex}`, store);
+      tagIndex += 1;
+    }
+
+    return `https://${host}/cgi/search.pl?${params.toString()}`;
+  }
+
+  private mapOpenFoodFactsProduct(product: OpenFoodFactsProduct): MappedProduct {
+    return {
+      code: product.code,
+      name:
+        product.product_name_es ??
+        product.product_name ??
+        'Producto sin nombre',
+      brand: product.brands ?? null,
+      image: product.image_url ?? null,
+      nutritionGrade: product.nutrition_grades ?? null,
+      categories: product.categories ?? null,
+      grams: 100,
+      calories: Math.round(product.nutriments?.['energy-kcal_100g'] ?? 0),
+      carbohydrates:
+        Math.round((product.nutriments?.['carbohydrates_100g'] ?? 0) * 10) / 10,
+      protein:
+        Math.round((product.nutriments?.['proteins_100g'] ?? 0) * 10) / 10,
+      fat: Math.round((product.nutriments?.['fat_100g'] ?? 0) * 10) / 10,
+      fiber: product.nutriments?.['fiber_100g']
+        ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
+        : null,
+      sugar: product.nutriments?.['sugars_100g']
+        ? Math.round(product.nutriments['sugars_100g'] * 10) / 10
+        : null,
+      sodium: product.nutriments?.['sodium_100g']
+        ? Math.round(product.nutriments['sodium_100g'] * 1000) / 10
+        : null,
+      others: [],
+    };
+  }
+
   private async preloadPopularCatalogTerms(): Promise<void> {
     for (const term of this.preloadSeedTerms) {
       try {
-        await this.searchProductsByName(term, 1, 20, false);
+        await this.searchProductsByName(term, 1, 20, false, undefined, 'full');
       } catch (error) {
         console.warn(`Catalog preload failed for "${term}"`, error?.message || error);
       }
+      await this.sleep(Math.min(this.OFF_SEED_DELAY_MS, 2000));
+    }
+
+    // Warm Spanish own-brands into local catalog (OFF ODbL, rate-limited).
+    await this.seedSpanishRetailCatalogFromOff();
+  }
+
+  /**
+   * Ingest popular Spanish supermarket private-label products from Open Food Facts
+   * into the local catalog so phase=local searches feel Spain-first.
+   */
+  private async seedSpanishRetailCatalogFromOff(): Promise<void> {
+    for (const brand of this.spanishBrandSeedTags) {
+      try {
+        const products = await this.searchOpenFoodFactsByName(
+          brand,
+          1,
+          40,
+          'es.openfoodfacts.org',
+        );
+        if (products.length > 0) {
+          await this.saveProductsToCatalog(products, 'off', 'odbl');
+          console.log(
+            `Seeded ${products.length} OFF products for Spanish brand "${brand}"`,
+          );
+        }
+      } catch (error) {
+        console.warn(
+          `Spanish brand seed failed for "${brand}"`,
+          error?.message || error,
+        );
+      }
+      await this.sleep(this.OFF_SEED_DELAY_MS);
     }
   }
 
@@ -950,7 +1157,7 @@ export class ProductService implements OnModuleInit {
           `https://es.openfoodfacts.org/api/v2/product/${code}?fields=product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code,serving_size&lc=es`,
           {
             headers: {
-              'User-Agent': 'GymTrackerApp/1.0',
+              'User-Agent': this.OFF_USER_AGENT,
             },
           },
         ),
@@ -1051,25 +1258,21 @@ export class ProductService implements OnModuleInit {
     pageSize: number,
     host: 'es.openfoodfacts.org' | 'world.openfoodfacts.org' = 'es.openfoodfacts.org',
   ): Promise<MappedProduct[]> {
+    const url = this.buildOpenFoodFactsSearchUrl(
+      host,
+      searchTerm,
+      page,
+      Math.min(pageSize * 2, 50),
+      { preferSpain: true },
+    );
+
     const response = await lastValueFrom(
-      this.httpService.get(
-        `https://${host}/cgi/search.pl?` +
-          `search_terms=${encodeURIComponent(searchTerm)}&` +
-          `search_simple=1&` +
-          `action=process&` +
-          `json=1&` +
-          `page=${page}&` +
-          `page_size=${pageSize * 2}&` +
-          `sort_by=unique_scans_n&` +
-          `lc=es&` +
-          `fields=product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code`,
-        {
-          headers: {
-            'User-Agent': 'GymTrackerApp/1.0',
-          },
-          timeout: this.OFF_TIMEOUT_MS,
+      this.httpService.get(url, {
+        headers: {
+          'User-Agent': this.OFF_USER_AGENT,
         },
-      ),
+        timeout: this.OFF_TIMEOUT_MS,
+      }),
     );
 
     const allProducts = (response.data.products as OpenFoodFactsProduct[]) || [];
@@ -1079,37 +1282,7 @@ export class ProductService implements OnModuleInit {
         const hasValidCode = product.code && product.code.length > 0;
         return hasValidName && hasValidCode;
       })
-      .map(
-        (product: OpenFoodFactsProduct): MappedProduct => ({
-          code: product.code,
-          name:
-            product.product_name_es ??
-            product.product_name ??
-            'Producto sin nombre',
-          brand: product.brands ?? null,
-          image: product.image_url ?? null,
-          nutritionGrade: product.nutrition_grades ?? null,
-          categories: product.categories ?? null,
-          grams: 100,
-          calories: Math.round(product.nutriments?.['energy-kcal_100g'] ?? 0),
-          carbohydrates:
-            Math.round((product.nutriments?.['carbohydrates_100g'] ?? 0) * 10) /
-            10,
-          protein:
-            Math.round((product.nutriments?.['proteins_100g'] ?? 0) * 10) / 10,
-          fat: Math.round((product.nutriments?.['fat_100g'] ?? 0) * 10) / 10,
-          fiber: product.nutriments?.['fiber_100g']
-            ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
-            : null,
-          sugar: product.nutriments?.['sugars_100g']
-            ? Math.round(product.nutriments['sugars_100g'] * 10) / 10
-            : null,
-          sodium: product.nutriments?.['sodium_100g']
-            ? Math.round(product.nutriments['sodium_100g'] * 1000) / 10
-            : null,
-          others: [],
-        }),
-      );
+      .map(product => this.mapOpenFoodFactsProduct(product));
   }
 
   private applyBrandFilterToResult(
@@ -1145,6 +1318,11 @@ export class ProductService implements OnModuleInit {
     const primary = variants.slice(0, this.EXTERNAL_SEARCH_VARIANT_LIMIT);
     if (primary.length === 0) return [];
 
+    const hasSpanishRetailHint = primary.some(variant => {
+      const hints = this.extractSpanishQueryHints(variant);
+      return hints.brandTags.length > 0 || hints.storeTags.length > 0;
+    });
+
     const offSettled = await Promise.allSettled(
       primary.map(variant =>
         this.searchOpenFoodFactsByName(
@@ -1155,11 +1333,15 @@ export class ProductService implements OnModuleInit {
         ),
       ),
     );
-    const usdaSettled = await Promise.allSettled(
-      primary.map(variant =>
-        this.searchUSDAProductsByName(variant, page, pageSize),
-      ),
-    );
+
+    // USDA is US-centric; skip it when the query clearly targets Spanish retail brands.
+    const usdaSettled = hasSpanishRetailHint
+      ? []
+      : await Promise.allSettled(
+          primary.map(variant =>
+            this.searchUSDAProductsByName(variant, page, pageSize),
+          ),
+        );
 
     let offProducts: MappedProduct[] = [];
     for (const result of offSettled) {
@@ -1360,6 +1542,7 @@ export class ProductService implements OnModuleInit {
       const response = await lastValueFrom(
         this.httpService.get(
           `https://es.openfoodfacts.org/api/v2/search?` +
+            `countries_tags_en=spain&` +
             `fields=product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code&` +
             `page=${page}&` +
             `page_size=${pageSize * 2}&` +
@@ -1367,7 +1550,7 @@ export class ProductService implements OnModuleInit {
             `json=1`,
           {
             headers: {
-              'User-Agent': 'GymTrackerApp/1.0',
+              'User-Agent': this.OFF_USER_AGENT,
             },
           },
         ),
@@ -1376,6 +1559,7 @@ export class ProductService implements OnModuleInit {
       const products = (response.data.products as OpenFoodFactsProduct[]) || [];
       const spanishBrands = [
         'hacendado',
+        'milbona',
         'dia',
         'carrefour',
         'lidl',
@@ -1383,6 +1567,7 @@ export class ProductService implements OnModuleInit {
         'auchan',
         'alcampo',
         'mercadona',
+        'consum',
       ];
 
       const mappedProducts = products
@@ -1597,7 +1782,7 @@ export class ProductService implements OnModuleInit {
           `https://es.openfoodfacts.org/api/v2/product/${code}?fields=product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code,serving_size&lc=es`,
           {
             headers: {
-              'User-Agent': 'GymTrackerApp/1.0',
+              'User-Agent': this.OFF_USER_AGENT,
             },
           },
         ),
