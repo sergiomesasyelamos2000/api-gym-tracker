@@ -28,17 +28,24 @@ export class SubscriptionGuard implements CanActivate {
       return true;
     }
 
-    // Get user from request
+    // Resolve user id from JWT (preferred) or request payload.
+    // Nutrition endpoints currently may run without JwtAuthGuard and pass userId in body/params.
     const request = context.switchToHttp().getRequest();
     const user = request.user;
+    const userId =
+      user?.sub ||
+      user?.id ||
+      request.body?.userId ||
+      request.params?.userId ||
+      request.query?.userId;
 
-    if (!user || !user.sub) {
+    if (!userId || typeof userId !== 'string') {
       throw new UnauthorizedException('User not authenticated');
     }
 
     // Check if user has access to the feature
     const hasAccess = await this.subscriptionService.checkFeatureAccess(
-      user.sub,
+      userId,
       feature,
     );
 
