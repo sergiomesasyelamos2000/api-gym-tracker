@@ -93,12 +93,21 @@ interface FatSecretFoodsResponse {
 export class ProductService implements OnModuleInit {
   private readonly searchCache = new Map<
     string,
-    { expiresAt: number; value: { products: MappedProduct[]; total: number } }
+    {
+      expiresAt: number;
+      value: {
+        products: MappedProduct[];
+        total: number;
+        incomplete?: boolean;
+      };
+    }
   >();
   private readonly SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
-  private readonly OFF_TIMEOUT_MS = 3000;
-  private readonly USDA_TIMEOUT_MS = 3000;
-  private readonly OVERLAY_TIMEOUT_MS = 3000;
+  private readonly OFF_TIMEOUT_MS = 2500;
+  private readonly USDA_TIMEOUT_MS = 2500;
+  private readonly OVERLAY_TIMEOUT_MS = 2500;
+  private readonly LOCAL_SEARCH_VARIANT_LIMIT = 3;
+  private readonly EXTERNAL_SEARCH_VARIANT_LIMIT = 2;
   private readonly overlaySearchCache = new Map<
     string,
     { expiresAt: number; value: MappedProduct[] }
@@ -1103,39 +1112,172 @@ export class ProductService implements OnModuleInit {
       );
   }
 
+  private applyBrandFilterToResult(
+    products: MappedProduct[],
+    brandFilters: string[],
+  ): { products: MappedProduct[]; total: number } {
+    if (brandFilters.length === 0) {
+      return { products, total: products.length };
+    }
+    const filtered = products.filter(product =>
+      this.matchesBrandFilters(product.brand, brandFilters),
+    );
+    return { products: filtered, total: filtered.length };
+  }
+
+  private async searchLocalCatalogParallel(
+    variants: string[],
+    page: number,
+    pageSize: number,
+  ): Promise<MappedProduct[]> {
+    const limited = variants.slice(0, this.LOCAL_SEARCH_VARIANT_LIMIT);
+    const batches = await Promise.all(
+      limited.map(variant => this.searchLocalCatalog(variant, page, pageSize)),
+    );
+    return this.mergeUniqueProducts(batches.flat());
+  }
+
+  private async searchExternalPublicSources(
+    variants: string[],
+    page: number,
+    pageSize: number,
+  ): Promise<MappedProduct[]> {
+    const primary = variants.slice(0, this.EXTERNAL_SEARCH_VARIANT_LIMIT);
+    if (primary.length === 0) return [];
+
+    const offSettled = await Promise.allSettled(
+      primary.map(variant =>
+        this.searchOpenFoodFactsByName(
+          variant,
+          page,
+          pageSize,
+          'es.openfoodfacts.org',
+        ),
+      ),
+    );
+    const usdaSettled = await Promise.allSettled(
+      primary.map(variant =>
+        this.searchUSDAProductsByName(variant, page, pageSize),
+      ),
+    );
+
+    let offProducts: MappedProduct[] = [];
+    for (const result of offSettled) {
+      if (result.status === 'fulfilled') {
+        offProducts = this.mergeUniqueProducts([
+          ...offProducts,
+          ...result.value,
+        ]);
+      } else {
+        console.warn(
+          'OFF ES search failed:',
+          result.reason?.message || result.reason,
+        );
+      }
+    }
+
+    let usdaProducts: MappedProduct[] = [];
+    for (const result of usdaSettled) {
+      if (result.status === 'fulfilled') {
+        usdaProducts = this.mergeUniqueProducts([
+          ...usdaProducts,
+          ...result.value,
+        ]);
+      } else {
+        console.warn(
+          'USDA search failed:',
+          result.reason?.message || result.reason,
+        );
+      }
+    }
+
+    if (offProducts.length < Math.min(6, pageSize)) {
+      const worldSettled = await Promise.allSettled(
+        primary.map(variant =>
+          this.searchOpenFoodFactsByName(
+            variant,
+            page,
+            pageSize,
+            'world.openfoodfacts.org',
+          ),
+        ),
+      );
+      for (const result of worldSettled) {
+        if (result.status === 'fulfilled') {
+          offProducts = this.mergeUniqueProducts([
+            ...offProducts,
+            ...result.value,
+          ]);
+        }
+      }
+    }
+
+    if (offProducts.length > 0) {
+      void this.saveProductsToCatalog(offProducts, 'off', 'odbl').catch(
+        error => {
+          console.warn('Background save to catalog (OFF) failed:', error);
+        },
+      );
+    }
+    if (usdaProducts.length > 0) {
+      void this.saveProductsToCatalog(usdaProducts, 'usda', 'cc0').catch(
+        error => {
+          console.warn('Background save to catalog (USDA) failed:', error);
+        },
+      );
+    }
+
+    return this.rankProducts(
+      this.mergeUniqueProducts([...offProducts, ...usdaProducts]),
+      variants,
+    ).slice(0, pageSize);
+  }
+
   async searchProductsByName(
     searchTerm: string,
     page: number = 1,
     pageSize: number = 20,
     includeOverlay: boolean = true,
     brandFilter?: string,
-  ): Promise<{ products: MappedProduct[]; total: number }> {
+    phase: 'local' | 'full' = 'full',
+  ): Promise<{
+    products: MappedProduct[];
+    total: number;
+    incomplete?: boolean;
+  }> {
     try {
       const normalizedSearch = this.normalizeSearchValue(searchTerm);
       if (!normalizedSearch) {
-        return { products: [], total: 0 };
+        return { products: [], total: 0, incomplete: false };
       }
 
       const parsedBrandFilters = this.parseBrandFilters(brandFilter);
       const normalizedBrandFilter = parsedBrandFilters.slice().sort().join('|');
-      const cacheKey = `${normalizedSearch}:${page}:${pageSize}:${normalizedBrandFilter}`;
+      const cacheKey = `${phase}:${normalizedSearch}:${page}:${pageSize}:${normalizedBrandFilter}:ov=${includeOverlay ? 1 : 0}`;
       const cached = this.searchCache.get(cacheKey);
       if (cached && cached.expiresAt > Date.now()) {
         return cached.value;
       }
 
       const searchVariants = this.buildSearchVariants(normalizedSearch);
+      const localProducts = this.rankProducts(
+        await this.searchLocalCatalogParallel(
+          searchVariants,
+          page,
+          pageSize,
+        ),
+        searchVariants,
+      ).slice(0, pageSize);
 
-      let localProducts: MappedProduct[] = [];
-      for (const variant of searchVariants) {
-        const localForVariant = await this.searchLocalCatalog(variant, page, pageSize);
-        localProducts = this.mergeUniqueProducts([...localProducts, ...localForVariant]);
-        if (localProducts.length >= pageSize) break;
-      }
-      localProducts = this.rankProducts(localProducts, searchVariants).slice(0, pageSize);
-
-      if (localProducts.length >= pageSize) {
-        const localResult = { products: localProducts, total: localProducts.length };
+      if (phase === 'local') {
+        const localFiltered = this.applyBrandFilterToResult(
+          localProducts,
+          parsedBrandFilters,
+        );
+        const localResult = {
+          ...localFiltered,
+          incomplete: localFiltered.products.length < pageSize,
+        };
         this.searchCache.set(cacheKey, {
           expiresAt: Date.now() + this.SEARCH_CACHE_TTL_MS,
           value: localResult,
@@ -1143,103 +1285,52 @@ export class ProductService implements OnModuleInit {
         return localResult;
       }
 
-      let offProducts: MappedProduct[] = [];
-      for (const variant of searchVariants) {
-        try {
-          const esProducts = await this.searchOpenFoodFactsByName(
-            variant,
-            page,
-            pageSize,
-            'es.openfoodfacts.org',
-          );
-          offProducts = this.mergeUniqueProducts([...offProducts, ...esProducts]);
-        } catch (error) {
-          console.warn('OFF ES search failed:', error?.message || error);
-        }
-        if (offProducts.length >= pageSize) break;
+      // Full catalog already filled page — skip external fan-out.
+      if (localProducts.length >= pageSize) {
+        const localResult = {
+          ...this.applyBrandFilterToResult(localProducts, parsedBrandFilters),
+          incomplete: false,
+        };
+        this.searchCache.set(cacheKey, {
+          expiresAt: Date.now() + this.SEARCH_CACHE_TTL_MS,
+          value: localResult,
+        });
+        return localResult;
       }
 
-      if (offProducts.length < Math.min(6, pageSize)) {
-        for (const variant of searchVariants) {
-          try {
-            const worldProducts = await this.searchOpenFoodFactsByName(
-              variant,
-              page,
-              pageSize,
-              'world.openfoodfacts.org',
-            );
-            offProducts = this.mergeUniqueProducts([
-              ...offProducts,
-              ...worldProducts,
-            ]);
-          } catch (error) {
-            console.warn('OFF world search failed:', error?.message || error);
-          }
-          if (offProducts.length >= pageSize) break;
-        }
-      }
-
-      offProducts = this.rankProducts(offProducts, searchVariants).slice(0, pageSize);
-
-      void this.saveProductsToCatalog(offProducts, 'off', 'odbl').catch(
-        error => {
-          console.warn('Background save to catalog (OFF) failed:', error);
-        },
+      const externalProducts = await this.searchExternalPublicSources(
+        searchVariants,
+        page,
+        pageSize,
       );
 
       let merged = this.mergeUniqueProducts([
         ...localProducts,
-        ...offProducts,
+        ...externalProducts,
       ]);
 
-      if (merged.length < pageSize) {
-        let usdaProducts: MappedProduct[] = [];
-        for (const variant of searchVariants) {
-          const partial = await this.searchUSDAProductsByName(
-            variant,
-            page,
-            pageSize,
-          );
-          usdaProducts = this.mergeUniqueProducts([...usdaProducts, ...partial]);
-          if (usdaProducts.length >= pageSize) break;
-        }
-        if (usdaProducts.length > 0) {
-          void this.saveProductsToCatalog(usdaProducts, 'usda', 'cc0').catch(
-            error => {
-              console.warn('Background save to catalog (USDA) failed:', error);
-            },
-          );
-          merged = this.mergeUniqueProducts([...merged, ...usdaProducts]);
-        }
-      }
-
+      // Optional commercial overlays only after public sources, never on critical path.
       if (includeOverlay && merged.length < pageSize) {
-        let overlayProducts: MappedProduct[] = [];
-        for (const variant of searchVariants) {
-          const partial = await this.searchOverlayProvidersByName(
-            variant,
-            page,
-            pageSize,
-          );
-          overlayProducts = this.mergeUniqueProducts([
-            ...overlayProducts,
-            ...partial,
-          ]);
-          if (overlayProducts.length >= pageSize) break;
-        }
+        const overlayPrimary = searchVariants.slice(
+          0,
+          this.EXTERNAL_SEARCH_VARIANT_LIMIT,
+        );
+        const overlayBatches = await Promise.all(
+          overlayPrimary.map(variant =>
+            this.searchOverlayProvidersByName(variant, page, pageSize),
+          ),
+        );
+        const overlayProducts = this.mergeUniqueProducts(overlayBatches.flat());
         if (overlayProducts.length > 0) {
           merged = this.mergeUniqueProducts([...merged, ...overlayProducts]);
         }
       }
 
       merged = this.rankProducts(merged, searchVariants).slice(0, pageSize);
-      const result = { products: merged, total: merged.length };
-      if (parsedBrandFilters.length > 0) {
-        result.products = result.products.filter(product =>
-          this.matchesBrandFilters(product.brand, parsedBrandFilters),
-        );
-        result.total = result.products.length;
-      }
+      const result = {
+        ...this.applyBrandFilterToResult(merged, parsedBrandFilters),
+        incomplete: false,
+      };
 
       if (result.products.length > 0) {
         this.searchCache.set(cacheKey, {
@@ -1254,6 +1345,7 @@ export class ProductService implements OnModuleInit {
       return {
         products: [],
         total: 0,
+        incomplete: false,
       };
     }
   }

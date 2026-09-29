@@ -99,20 +99,23 @@ export class NutritionController {
     @Query('q') searchTerm: string,
     @Query('page') page: string = '1',
     @Query('pageSize') pageSize: string = '20',
-    @Query('overlay') overlay: string = '1',
+    @Query('overlay') overlay: string = '0',
     @Query('brand') brand: string = '',
+    @Query('phase') phase: string = 'full',
   ) {
     try {
       if (!searchTerm || searchTerm.trim().length === 0) {
         return {
           products: [],
           total: 0,
+          incomplete: false,
         };
       }
 
       const pageNum = parseInt(page) || 1;
       const pageSizeNum = parseInt(pageSize) || 20;
-      const includeOverlay = !(overlay === '0' || overlay === 'false');
+      const includeOverlay = overlay === '1' || overlay === 'true';
+      const searchPhase = phase === 'local' ? 'local' : 'full';
 
       const result = await this.productService.searchProductsByName(
         searchTerm.trim(),
@@ -120,6 +123,7 @@ export class NutritionController {
         pageSizeNum,
         includeOverlay,
         brand?.trim() || undefined,
+        searchPhase,
       );
 
       return result;
@@ -128,6 +132,7 @@ export class NutritionController {
       return {
         products: [],
         total: 0,
+        incomplete: false,
       };
     }
   }
