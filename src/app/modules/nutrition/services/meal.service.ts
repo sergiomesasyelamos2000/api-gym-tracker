@@ -2,39 +2,49 @@ import {
   CreateCustomMealDto,
   CustomMealEntity,
   CustomMealResponseDto,
+  MealImageKind,
+  MealImageSource,
   MealProductDto,
   UpdateCustomMealDto,
 } from '@app/entity-data-models';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import cloudinary from '../../../../config/cloudinary.config';
+import {
+  collectMealProductImageUrls,
+  inferLegacyMealImageSource,
+} from '../utils/meal-collage-layout.util';
+import { MealCollageService } from './meal-collage.service';
+
+type ResolvedMealImage = {
+  url: string | null;
+  source: MealImageSource | null;
+};
 
 @Injectable()
 export class MealService {
+  private readonly logger = new Logger(MealService.name);
+
   constructor(
     @InjectRepository(CustomMealEntity)
     private readonly customMealRepo: Repository<CustomMealEntity>,
+    private readonly mealCollageService: MealCollageService,
   ) {}
 
   async createCustomMeal(
     dto: CreateCustomMealDto,
   ): Promise<CustomMealResponseDto> {
     try {
-      let imageUrl: string | undefined = undefined;
-      if (dto.image && dto.image.startsWith('data:image')) {
-        imageUrl = await this.uploadToCloudinary(dto.image, 'meals');
-      } else if (dto.image) {
-        imageUrl = dto.image;
-      }
-
+      const resolved = await this.resolveMealImageForCreate(dto);
       const totals = this.calculateMealTotals(dto.products);
 
       const meal = this.customMealRepo.create({
         userId: dto.userId,
         name: dto.name,
         description: dto.description,
-        image: imageUrl,
+        image: resolved.url ?? undefined,
+        imageSource: resolved.source,
         products: dto.products,
         totalCalories: totals.calories,
         totalProtein: totals.protein,
@@ -100,20 +110,24 @@ export class MealService {
       );
     }
 
-    let imageUrl = meal.image;
-    if (dto.image && dto.image.startsWith('data:image')) {
-      if (meal.image && meal.image.includes('cloudinary.com')) {
-        const publicId = this.extractPublicIdFromUrl(meal.image);
-        await this.deleteFromCloudinary(publicId);
-      }
-      imageUrl = await this.uploadToCloudinary(dto.image, 'meals');
-    } else if (dto.image !== undefined) {
-      imageUrl = dto.image;
-    }
+    const resolved = await this.resolveMealImageForUpdate(meal, dto);
 
     if (dto.name !== undefined) meal.name = dto.name;
     if (dto.description !== undefined) meal.description = dto.description;
-    meal.image = imageUrl;
+
+    if (resolved) {
+      if (
+        meal.image &&
+        meal.image !== resolved.url &&
+        meal.image.includes('cloudinary.com')
+      ) {
+        const publicId = this.extractPublicIdFromUrl(meal.image);
+        await this.deleteFromCloudinary(publicId);
+      }
+      meal.image = resolved.url ?? undefined;
+      meal.imageSource = resolved.source;
+    }
+
     if (dto.products !== undefined) {
       meal.products = dto.products;
       const totals = this.calculateMealTotals(dto.products);
@@ -171,6 +185,7 @@ export class MealService {
       name: `${originalMeal.name} (Copia)`,
       description: originalMeal.description,
       image: originalMeal.image,
+      imageSource: originalMeal.imageSource,
       products: originalMeal.products,
       totalCalories: originalMeal.totalCalories,
       totalProtein: originalMeal.totalProtein,
@@ -237,6 +252,135 @@ export class MealService {
     return true;
   }
 
+  private async resolveMealImageForCreate(
+    dto: CreateCustomMealDto,
+  ): Promise<ResolvedMealImage> {
+    const kind: MealImageKind = dto.imageKind ?? 'auto';
+
+    if (kind === 'user') {
+      return this.resolveUserImage(dto.image);
+    }
+
+    return this.buildCollageImage(dto.products);
+  }
+
+  private async resolveMealImageForUpdate(
+    meal: CustomMealEntity,
+    dto: UpdateCustomMealDto,
+  ): Promise<ResolvedMealImage | null> {
+    const kind: MealImageKind = dto.imageKind ?? 'auto';
+    const effectiveSource: MealImageSource =
+      meal.imageSource ??
+      inferLegacyMealImageSource({
+        image: meal.image,
+        products: meal.products,
+      });
+
+    if (kind === 'user') {
+      if (typeof dto.image === 'string') {
+        return this.resolveUserImage(dto.image);
+      }
+      // Keep existing user cover; stamp imageSource on legacy rows
+      if (effectiveSource === 'user' && meal.image && meal.imageSource == null) {
+        return { url: meal.image, source: 'user' };
+      }
+      return null;
+    }
+
+    // auto: explicit clear of a user photo → rebuild collage
+    if (dto.image === null && effectiveSource === 'user') {
+      return this.buildCollageImageOrKeep(meal, dto.products ?? meal.products);
+    }
+
+    if (effectiveSource === 'user') {
+      return null;
+    }
+
+    // collage / legacy-collage: rebuild only when product image inputs change
+    if (dto.products !== undefined) {
+      const previousUrls = collectMealProductImageUrls(meal.products).join('|');
+      const nextUrls = collectMealProductImageUrls(dto.products).join('|');
+      if (previousUrls !== nextUrls) {
+        return this.buildCollageImageOrKeep(meal, dto.products);
+      }
+      // Stamp imageSource on legacy first-product covers without regenerating
+      if (meal.imageSource == null && meal.image) {
+        return { url: meal.image, source: 'collage' };
+      }
+    }
+
+    return null;
+  }
+
+  private async resolveUserImage(
+    image: string | null | undefined,
+  ): Promise<ResolvedMealImage> {
+    if (!image) {
+      return { url: null, source: null };
+    }
+    if (image.startsWith('data:image')) {
+      const url = await this.uploadToCloudinary(image, 'meals');
+      return { url, source: 'user' };
+    }
+    return { url: image, source: 'user' };
+  }
+
+  /**
+   * Build a collage; on failure keep the previous meal cover instead of wiping it.
+   */
+  private async buildCollageImageOrKeep(
+    meal: CustomMealEntity,
+    products: MealProductDto[],
+  ): Promise<ResolvedMealImage | null> {
+    const urls = collectMealProductImageUrls(products);
+    if (urls.length === 0) {
+      // No product images left — clear cover intentionally
+      return { url: null, source: null };
+    }
+
+    try {
+      const buffer = await this.mealCollageService.buildCollageFromUrls(urls);
+      if (!buffer) {
+        this.logger.warn(
+          'Meal collage rebuild failed; keeping existing meal image',
+        );
+        return null;
+      }
+      const url = await this.uploadBufferToCloudinary(buffer, 'meals');
+      return { url, source: 'collage' };
+    } catch (error) {
+      this.logger.error(
+        'Soft-fail: could not build/upload meal collage; keeping existing',
+        error as Error,
+      );
+      return null;
+    }
+  }
+
+  private async buildCollageImage(
+    products: MealProductDto[],
+  ): Promise<ResolvedMealImage> {
+    const urls = collectMealProductImageUrls(products);
+    if (urls.length === 0) {
+      return { url: null, source: null };
+    }
+
+    try {
+      const buffer = await this.mealCollageService.buildCollageFromUrls(urls);
+      if (!buffer) {
+        return { url: null, source: null };
+      }
+      const url = await this.uploadBufferToCloudinary(buffer, 'meals');
+      return { url, source: 'collage' };
+    } catch (error) {
+      this.logger.error(
+        'Soft-fail: could not build/upload meal collage',
+        error as Error,
+      );
+      return { url: null, source: null };
+    }
+  }
+
   private mapCustomMealToDto(meal: CustomMealEntity): CustomMealResponseDto {
     return {
       id: meal.id,
@@ -244,6 +388,7 @@ export class MealService {
       name: meal.name,
       description: meal.description,
       image: meal.image,
+      imageSource: meal.imageSource ?? null,
       products: meal.products,
       totalCalories: Number(meal.totalCalories),
       totalProtein: Number(meal.totalProtein),
@@ -308,6 +453,14 @@ export class MealService {
       console.error('Error uploading to Cloudinary:', error);
       throw new Error('No se pudo subir la imagen');
     }
+  }
+
+  private async uploadBufferToCloudinary(
+    buffer: Buffer,
+    folder: string,
+  ): Promise<string> {
+    const dataUri = `data:image/png;base64,${buffer.toString('base64')}`;
+    return this.uploadToCloudinary(dataUri, folder);
   }
 
   private extractPublicIdFromUrl(url: string): string {

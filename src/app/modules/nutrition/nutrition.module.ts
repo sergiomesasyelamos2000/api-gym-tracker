@@ -16,6 +16,7 @@ import { NutritionController } from './nutrition.controller';
 import { NutritionService } from './nutrition.service';
 import { ProductService } from './services/product.service';
 import { MealService } from './services/meal.service';
+import { MealCollageService } from './services/meal-collage.service';
 import { DiaryService } from './services/diary.service';
 import { ShoppingListService } from './services/shopping-list.service';
 import { ProfileService } from './services/profile.service';
@@ -32,6 +33,7 @@ import { SubscriptionModule } from '../subscription/subscription.module';
     NutritionService,
     ProductService,
     MealService,
+    MealCollageService,
     DiaryService,
     ShoppingListService,
     ProfileService,

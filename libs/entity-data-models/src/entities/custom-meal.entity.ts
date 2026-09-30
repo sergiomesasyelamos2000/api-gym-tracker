@@ -40,6 +40,10 @@ export class CustomMealEntity {
   @Column({ nullable: true })
   image?: string;
 
+  /** How `image` was produced: user upload, product collage, or null for legacy rows. */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  imageSource?: 'user' | 'collage' | null;
+
   @Column({ type: 'json' })
   products!: MealProduct[];
 
