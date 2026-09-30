@@ -60,3 +60,8 @@ credentials/
 *.json
 !package.json
 !tsconfig.json
+
+#ECC
+#Cursor
+.cursor/
+.ECC/
