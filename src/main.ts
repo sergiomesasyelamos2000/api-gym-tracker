@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app/app.module';
 import 'reflect-metadata';
 import { json, urlencoded, raw } from 'express';
+import * as compression from 'compression';
 import * as dotenv from 'dotenv';
 import { setDefaultResultOrder } from 'node:dns';
 
@@ -21,6 +22,9 @@ async function bootstrap() {
 
   // ✅ Raw body for Stripe webhook (must be BEFORE json middleware)
   app.use('/api/subscription/webhook', raw({ type: 'application/json' }));
+
+  // Gzip JSON responses for mobile clients
+  app.use(compression());
 
   // ✅ Aumentar el límite de tamaño del payload
   app.use(json({ limit: '10mb' })); // Aumenta a 10MB

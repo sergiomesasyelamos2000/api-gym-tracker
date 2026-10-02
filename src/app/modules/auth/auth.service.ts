@@ -31,6 +31,7 @@ import cloudinary from '../../../config/cloudinary.config';
 import { OAuth2Client } from 'google-auth-library';
 import { createHash, createPublicKey, randomBytes, type JsonWebKey } from 'crypto';
 import { EmailService } from './email.service';
+import { userExistenceCache } from './utils/user-existence.cache';
 import * as jwt from 'jsonwebtoken';
 
 interface AppleIdentityTokenPayload extends jwt.JwtPayload {
@@ -570,6 +571,8 @@ export class AuthService {
       await manager.delete(NutritionPlanEntity, { userId });
       await manager.delete(UserEntity, { id: userId });
     });
+
+    userExistenceCache.set(userId, false);
   }
 
   // ==================== HELPER METHODS ====================
@@ -578,6 +581,7 @@ export class AuthService {
     const payload = {
       sub: user.id,
       email: user.email,
+      name: user.name,
     };
 
     const accessToken = this.jwtService.sign(payload, {

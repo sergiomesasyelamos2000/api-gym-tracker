@@ -6,6 +6,7 @@ import {
   NutritionPlanDayDto,
   NutritionPlanEntity,
   NutritionPlanFoodItemDto,
+  NutritionPlanListItemDto,
   NutritionPlanMacroTotalsDto,
   NutritionPlanMealDto,
   NutritionPlanResponseDto,
@@ -172,13 +173,28 @@ export class NutritionPlanService {
     return this.mapPlanToDto(saved);
   }
 
-  async findAllByUser(userId: string): Promise<NutritionPlanResponseDto[]> {
+  async findAllByUser(userId: string): Promise<NutritionPlanListItemDto[]> {
     const plans = await this.nutritionPlanRepo.find({
       where: { userId },
       order: { createdAt: 'DESC' },
+      select: {
+        id: true,
+        userId: true,
+        name: true,
+        description: true,
+        status: true,
+        durationDays: true,
+        macroSnapshot: true,
+        avgDailyCalories: true,
+        avgDailyProtein: true,
+        avgDailyCarbs: true,
+        avgDailyFat: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
-    return plans.map(plan => this.mapPlanToDto(plan));
+    return plans.map(plan => this.mapPlanToListDto(plan));
   }
 
   async findActiveByUser(
@@ -337,6 +353,41 @@ export class NutritionPlanService {
       status: plan.status,
       durationDays: plan.durationDays,
       planData: plan.planData,
+      macroSnapshot: plan.macroSnapshot ?? null,
+      avgDailyCalories: Number(plan.avgDailyCalories),
+      avgDailyProtein: Number(plan.avgDailyProtein),
+      avgDailyCarbs: Number(plan.avgDailyCarbs),
+      avgDailyFat: Number(plan.avgDailyFat),
+      createdAt: plan.createdAt,
+      updatedAt: plan.updatedAt,
+    };
+  }
+
+  private mapPlanToListDto(
+    plan: Pick<
+      NutritionPlanEntity,
+      | 'id'
+      | 'userId'
+      | 'name'
+      | 'description'
+      | 'status'
+      | 'durationDays'
+      | 'macroSnapshot'
+      | 'avgDailyCalories'
+      | 'avgDailyProtein'
+      | 'avgDailyCarbs'
+      | 'avgDailyFat'
+      | 'createdAt'
+      | 'updatedAt'
+    >,
+  ): NutritionPlanListItemDto {
+    return {
+      id: plan.id,
+      userId: plan.userId,
+      name: plan.name,
+      description: plan.description,
+      status: plan.status,
+      durationDays: plan.durationDays,
       macroSnapshot: plan.macroSnapshot ?? null,
       avgDailyCalories: Number(plan.avgDailyCalories),
       avgDailyProtein: Number(plan.avgDailyProtein),

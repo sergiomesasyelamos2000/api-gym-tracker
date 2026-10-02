@@ -1,6 +1,7 @@
 import {
   CreateCustomMealDto,
   CustomMealEntity,
+  CustomMealListItemDto,
   CustomMealResponseDto,
   MealImageKind,
   MealImageSource,
@@ -63,13 +64,13 @@ export class MealService {
     }
   }
 
-  async getCustomMeals(userId: string): Promise<CustomMealResponseDto[]> {
+  async getCustomMeals(userId: string): Promise<CustomMealListItemDto[]> {
     const meals = await this.customMealRepo.find({
       where: { userId },
       order: { createdAt: 'DESC' },
     });
 
-    return meals.map(meal => this.mapCustomMealToDto(meal));
+    return meals.map(meal => this.mapCustomMealToListDto(meal));
   }
 
   async getCustomMealById(
@@ -147,7 +148,7 @@ export class MealService {
   async searchCustomMeals(
     userId: string,
     searchTerm: string,
-  ): Promise<CustomMealResponseDto[]> {
+  ): Promise<CustomMealListItemDto[]> {
     const meals = await this.customMealRepo
       .createQueryBuilder('meal')
       .where('meal.userId = :userId', { userId })
@@ -157,7 +158,7 @@ export class MealService {
       .orderBy('meal.createdAt', 'DESC')
       .getMany();
 
-    return meals.map(meal => this.mapCustomMealToDto(meal));
+    return meals.map(meal => this.mapCustomMealToListDto(meal));
   }
 
   async duplicateCustomMeal(
@@ -390,6 +391,29 @@ export class MealService {
       image: meal.image,
       imageSource: meal.imageSource ?? null,
       products: meal.products,
+      totalCalories: Number(meal.totalCalories),
+      totalProtein: Number(meal.totalProtein),
+      totalCarbs: Number(meal.totalCarbs),
+      totalFat: Number(meal.totalFat),
+      totalSugar: meal.totalSugar ? Number(meal.totalSugar) : null,
+      totalFiber: meal.totalFiber ? Number(meal.totalFiber) : null,
+      totalSodium: meal.totalSodium ? Number(meal.totalSodium) : null,
+      createdAt: meal.createdAt,
+      updatedAt: meal.updatedAt,
+    };
+  }
+
+  private mapCustomMealToListDto(
+    meal: CustomMealEntity,
+  ): CustomMealListItemDto {
+    return {
+      id: meal.id,
+      userId: meal.userId,
+      name: meal.name,
+      description: meal.description,
+      image: meal.image,
+      imageSource: meal.imageSource ?? null,
+      productCount: Array.isArray(meal.products) ? meal.products.length : 0,
       totalCalories: Number(meal.totalCalories),
       totalProtein: Number(meal.totalProtein),
       totalCarbs: Number(meal.totalCarbs),

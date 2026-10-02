@@ -8,7 +8,14 @@ import {
 } from '@app/entity-data-models';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Between, Repository } from 'typeorm';
+
+const DEFAULT_GOALS = {
+  dailyCalories: 2000,
+  protein: 150,
+  carbs: 200,
+  fat: 65,
+};
 
 @Injectable()
 export class DiaryService {
@@ -29,45 +36,8 @@ export class DiaryService {
     userId: string,
     date: string,
   ): Promise<DailyNutritionSummaryDto> {
-    const entries = await this.foodEntryRepo.find({
-      where: {
-        userId: userId,
-        date: date,
-      },
-      order: { createdAt: 'ASC' },
-    });
-
-    let profile = await this.userProfileRepo.findOne({
-      where: { userId },
-    });
-
-    if (!profile) {
-      return {
-        date,
-        entries: entries.map(e => this.mapFoodEntryToDto(e)),
-        totals: this.calculateTotals(entries),
-        goals: {
-          dailyCalories: 2000,
-          protein: 150,
-          carbs: 200,
-          fat: 65,
-        },
-        hasProfile: false,
-      };
-    }
-
-    return {
-      date,
-      entries: entries.map(e => this.mapFoodEntryToDto(e)),
-      totals: this.calculateTotals(entries),
-      goals: {
-        dailyCalories: profile.dailyCalories,
-        protein: Number(profile.proteinGrams),
-        carbs: Number(profile.carbsGrams),
-        fat: Number(profile.fatGrams),
-      },
-      hasProfile: true,
-    };
+    const [summary] = await this.buildSummariesForRange(userId, date, date);
+    return summary;
   }
 
   async updateFoodEntry(
@@ -130,20 +100,12 @@ export class DiaryService {
     userId: string,
     startDate: string,
   ): Promise<DailyNutritionSummaryDto[]> {
-    const start = new Date(startDate);
+    const start = new Date(`${startDate}T00:00:00.000Z`);
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 6);
+    const endDate = end.toISOString().split('T')[0];
 
-    const summaries: DailyNutritionSummaryDto[] = [];
-
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(start);
-      date.setDate(date.getDate() + i);
-      const dateStr = date.toISOString().split('T')[0];
-
-      const summary = await this.getDailyEntries(userId, dateStr);
-      summaries.push(summary);
-    }
-
-    return summaries;
+    return this.buildSummariesForRange(userId, startDate, endDate);
   }
 
   async getMonthlySummary(
@@ -152,14 +114,62 @@ export class DiaryService {
     month: number,
   ): Promise<DailyNutritionSummaryDto[]> {
     const daysInMonth = new Date(year, month, 0).getDate();
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+    const endDate = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+
+    return this.buildSummariesForRange(userId, startDate, endDate);
+  }
+
+  /**
+   * One range query for entries + one profile fetch; fill every day in range.
+   */
+  private async buildSummariesForRange(
+    userId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<DailyNutritionSummaryDto[]> {
+    const [entries, profile] = await Promise.all([
+      this.foodEntryRepo.find({
+        where: {
+          userId,
+          date: Between(startDate, endDate),
+        },
+        order: { date: 'ASC', createdAt: 'ASC' },
+      }),
+      this.userProfileRepo.findOne({ where: { userId } }),
+    ]);
+
+    const goals = profile
+      ? {
+          dailyCalories: profile.dailyCalories,
+          protein: Number(profile.proteinGrams),
+          carbs: Number(profile.carbsGrams),
+          fat: Number(profile.fatGrams),
+        }
+      : DEFAULT_GOALS;
+    const hasProfile = Boolean(profile);
+
+    const byDate = new Map<string, FoodEntryEntity[]>();
+    for (const entry of entries) {
+      const list = byDate.get(entry.date) ?? [];
+      byDate.set(entry.date, [...list, entry]);
+    }
+
     const summaries: DailyNutritionSummaryDto[] = [];
+    const cursor = new Date(`${startDate}T00:00:00.000Z`);
+    const end = new Date(`${endDate}T00:00:00.000Z`);
 
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(year, month - 1, day);
-      const dateStr = date.toISOString().split('T')[0];
-
-      const summary = await this.getDailyEntries(userId, dateStr);
-      summaries.push(summary);
+    while (cursor.getTime() <= end.getTime()) {
+      const dateStr = cursor.toISOString().split('T')[0];
+      const dayEntries = byDate.get(dateStr) ?? [];
+      summaries.push({
+        date: dateStr,
+        entries: dayEntries.map(e => this.mapFoodEntryToDto(e)),
+        totals: this.calculateTotals(dayEntries),
+        goals,
+        hasProfile,
+      });
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
 
     return summaries;

@@ -2,10 +2,12 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
 @Entity('favorite_products')
+@Index(['userId'])
 export class FavoriteProductEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

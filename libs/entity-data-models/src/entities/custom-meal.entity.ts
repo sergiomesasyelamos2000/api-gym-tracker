@@ -3,6 +3,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
@@ -24,6 +25,8 @@ export interface MealProduct {
 }
 
 @Entity('custom_meals')
+@Index(['userId'])
+@Index(['userId', 'createdAt'])
 export class CustomMealEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

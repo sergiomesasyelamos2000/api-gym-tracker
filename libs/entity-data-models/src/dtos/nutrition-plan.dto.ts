@@ -104,5 +104,22 @@ export interface NutritionPlanResponseDto {
   updatedAt: Date;
 }
 
+/** List payload without full planData. */
+export interface NutritionPlanListItemDto {
+  id: string;
+  userId: string;
+  name: string;
+  description?: string;
+  status: NutritionPlanStatus;
+  durationDays: number;
+  macroSnapshot: NutritionPlanMacroSnapshotDto | null;
+  avgDailyCalories: number;
+  avgDailyProtein: number;
+  avgDailyCarbs: number;
+  avgDailyFat: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface GenerateNutritionPlanResponseDto
   extends NutritionPlanResponseDto {}

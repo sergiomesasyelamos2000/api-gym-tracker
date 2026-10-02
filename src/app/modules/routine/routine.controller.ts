@@ -6,6 +6,7 @@ import {
 import type {
   CreateRoutineFolderRequest,
   GlobalRoutineStats,
+  PaginatedRoutineSessions,
   RenameRoutineFolderRequest,
   RoutineFolderResponse,
   RoutineLayoutRequest,
@@ -26,9 +27,7 @@ import {
   Put,
   Query,
   UseGuards,
-  UseInterceptors,
 } from '@nestjs/common';
-import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -38,9 +37,11 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RequireSubscription } from '../subscription/decorators/require-subscription.decorator';
 import { SubscriptionGuard } from '../subscription/guards/subscription.guard';
+import { SessionsQueryDto } from './dto/sessions-query.dto';
 import { RoutineService } from './routine.service';
 import {
   mapGlobalStatsToContract,
+  mapPaginatedSessionsToContract,
   mapRoutineListToContract,
   mapRoutineToContract,
   mapSessionListToContract,
@@ -67,9 +68,12 @@ export class RoutineController {
   @Get('sessions')
   async getAllSessions(
     @CurrentUser() user: CurrentUserData,
-    @Query('fields') fields?: string,
-  ): Promise<RoutineSession[] | RoutineSessionBurnSummary[]> {
-    if (fields === 'burn') {
+    @Query() query: SessionsQueryDto,
+  ): Promise<
+    | PaginatedRoutineSessions
+    | RoutineSessionBurnSummary[]
+  > {
+    if (query.fields === 'burn') {
       const rows = await this.routineService.getAllSessionBurnSummaries(user.id);
       return rows.map(row => ({
         id: row.id,
@@ -80,13 +84,15 @@ export class RoutineController {
         caloriesBurned: row.caloriesBurned,
       }));
     }
-    const result = await this.routineService.getAllSessions(user.id);
-    return mapSessionListToContract(result);
+
+    const page = await this.routineService.getAllSessionsPage(user.id, {
+      limit: query.limit,
+      cursor: query.cursor,
+    });
+    return mapPaginatedSessionsToContract(page);
   }
 
   @Get('stats/global')
-  @UseInterceptors(CacheInterceptor)
-  @CacheTTL(60)
   async getGlobalStats(
     @CurrentUser() user: CurrentUserData,
   ): Promise<GlobalRoutineStats> {

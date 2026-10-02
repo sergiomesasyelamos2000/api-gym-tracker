@@ -3,10 +3,13 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
 @Entity('custom_products')
+@Index(['userId'])
+@Index(['userId', 'createdAt'])
 export class CustomProductEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

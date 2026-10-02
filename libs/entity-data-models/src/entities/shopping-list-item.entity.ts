@@ -2,11 +2,13 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { FoodUnit } from '../dtos/shared-types';
 
 @Entity('shopping_list_items')
+@Index(['userId'])
 export class ShoppingListItemEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

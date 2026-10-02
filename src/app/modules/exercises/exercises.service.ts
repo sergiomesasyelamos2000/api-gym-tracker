@@ -17,6 +17,12 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { firstValueFrom } from 'rxjs';
 import { Brackets, Repository } from 'typeorm';
+import {
+  isInlineBase64Image,
+  isRemoteHttpUrl,
+  uploadDataUriToCloudinary,
+  uploadImageBufferToCloudinary,
+} from '../../common/cloudinary-upload.util';
 
 const sharp = require('sharp');
 
@@ -403,8 +409,29 @@ export class ExercisesService implements OnModuleInit {
     }
 
     // Crear ejercicio
+    const exerciseId = uuidv4();
+    let imageUrl: string | undefined;
+    if (dto.imageBase64?.trim()) {
+      try {
+        imageUrl = await uploadDataUriToCloudinary(
+          dto.imageBase64.trim(),
+          'exercises/custom',
+          exerciseId,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `No se pudo subir imagen custom a Cloudinary: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        throw new BadRequestException(
+          'No se pudo subir la imagen del ejercicio',
+        );
+      }
+    }
+
     const exercise = this.exerciseRepository.create({
-      id: uuidv4(),
+      id: exerciseId,
       name: dto.name,
       equipments: [equipment.name],
       targetMuscles: [primaryMuscle.name],
@@ -413,7 +440,7 @@ export class ExercisesService implements OnModuleInit {
       bodyParts: [primaryMuscle.name],
       instructions: [],
       giftUrl: undefined,
-      imageUrl: dto.imageBase64,
+      imageUrl,
     });
 
     return this.exerciseRepository.save(exercise);
@@ -679,7 +706,7 @@ export class ExercisesService implements OnModuleInit {
 
     entity.relatedExerciseIds = data.relatedExerciseIds || [];
 
-    // 🖼️ Procesar imagen - La API incluye imageUrl directamente
+    // 🖼️ Procesar imagen - descargar, convertir a PNG y subir a Cloudinary (URL corta)
     const imageUrl = this.resolveImageUrl(data);
     if (imageUrl) {
       const fullImageUrl = this.buildAbsoluteImageUrl(imageUrl);
@@ -687,7 +714,10 @@ export class ExercisesService implements OnModuleInit {
         this.logger.debug(`Descargando imagen: ${fullImageUrl}`);
 
         const imageBuffer = await this.downloadAndConvertImage(fullImageUrl);
-        entity.imageUrl = imageBuffer.toString('base64');
+        entity.imageUrl = await this.uploadExerciseStaticImage(
+          imageBuffer,
+          entity.id,
+        );
       } catch (error) {
         this.logger.warn(
           `No se pudo procesar imagen para ${data.name}: ${error.message}`,
@@ -702,7 +732,10 @@ export class ExercisesService implements OnModuleInit {
         if (gifUrl) {
           try {
             const gifBuffer = await this.downloadAndConvertImage(gifUrl);
-            entity.imageUrl = gifBuffer.toString('base64');
+            entity.imageUrl = await this.uploadExerciseStaticImage(
+              gifBuffer,
+              entity.id,
+            );
             this.logger.debug(
               `Usando GIF convertido a PNG para ${data.name}`,
             );
@@ -717,7 +750,10 @@ export class ExercisesService implements OnModuleInit {
       // Si no hay imageUrl, convertir el GIF al primer frame PNG
       try {
         const gifBuffer = await this.downloadAndConvertImage(gifUrl);
-        entity.imageUrl = gifBuffer.toString('base64');
+        entity.imageUrl = await this.uploadExerciseStaticImage(
+          gifBuffer,
+          entity.id,
+        );
       } catch (error) {
         this.logger.warn(
           `No se pudo procesar GIF para ${data.name}: ${error.message}`,
@@ -730,8 +766,19 @@ export class ExercisesService implements OnModuleInit {
     return entity;
   }
 
+  private async uploadExerciseStaticImage(
+    buffer: Buffer,
+    exerciseId: string,
+  ): Promise<string> {
+    return uploadImageBufferToCloudinary(buffer, 'exercises/static', {
+      mimeType: 'image/png',
+      publicId: exerciseId,
+    });
+  }
+
   /**
-   * Backfill static PNG base64 into imageUrl from giftUrl for rows missing a usable static image.
+   * Backfill static PNG into imageUrl from giftUrl for rows missing a usable static image.
+   * Uploads to Cloudinary (HTTPS URL) instead of storing base64.
    */
   async backfillStaticImagesFromGifs(options?: {
     batchSize?: number;
@@ -774,8 +821,12 @@ export class ExercisesService implements OnModuleInit {
         const giftUrl = exercise.giftUrl!.trim();
         try {
           const pngBuffer = await this.downloadAndConvertImage(giftUrl);
+          const secureUrl = await this.uploadExerciseStaticImage(
+            pngBuffer,
+            exercise.id,
+          );
           await this.exerciseRepository.update(exercise.id, {
-            imageUrl: pngBuffer.toString('base64'),
+            imageUrl: secureUrl,
           });
           updated += 1;
           this.logger.debug(
@@ -805,11 +856,89 @@ export class ExercisesService implements OnModuleInit {
     };
   }
 
+  /**
+   * Migrate existing inline base64 imageUrl values to Cloudinary HTTPS URLs.
+   * Paged query only — never loads the full table into memory.
+   */
+  async migrateBase64ImagesToCloudinary(options?: {
+    batchSize?: number;
+    limit?: number;
+  }): Promise<{
+    processed: number;
+    updated: number;
+    skipped: number;
+    failed: number;
+  }> {
+    const batchSize = Math.min(Math.max(1, options?.batchSize ?? 20), 50);
+    const limit = Math.min(Math.max(1, options?.limit ?? 50), 100);
+
+    const candidates = await this.exerciseRepository
+      .createQueryBuilder('exercise')
+      .select(['exercise.id', 'exercise.name', 'exercise.imageUrl'])
+      .where('exercise.imageUrl IS NOT NULL')
+      .andWhere(
+        `(exercise.imageUrl LIKE 'data:image%' OR (LENGTH(exercise.imageUrl) > 200 AND exercise.imageUrl NOT LIKE 'http%'))`,
+      )
+      .orderBy('exercise.id', 'ASC')
+      .take(limit)
+      .getMany();
+
+    let updated = 0;
+    let failed = 0;
+
+    this.logger.log(
+      `☁️ Migración base64→Cloudinary: ${candidates.length} candidatos (batch=${batchSize}, limit=${limit})`,
+    );
+
+    for (let i = 0; i < candidates.length; i += batchSize) {
+      const batch = candidates.slice(i, i + batchSize);
+
+      for (const exercise of batch) {
+        if (!isInlineBase64Image(exercise.imageUrl)) {
+          continue;
+        }
+        try {
+          const secureUrl = await uploadDataUriToCloudinary(
+            exercise.imageUrl!.trim(),
+            'exercises/static',
+            exercise.id,
+          );
+          await this.exerciseRepository.update(exercise.id, {
+            imageUrl: secureUrl,
+          });
+          updated += 1;
+        } catch (error) {
+          failed += 1;
+          this.logger.warn(
+            `Migración falló ${exercise.id}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+    }
+
+    this.logger.log(
+      `☁️ Migración terminada: processed=${candidates.length} updated=${updated} failed=${failed}`,
+    );
+
+    return {
+      processed: candidates.length,
+      updated,
+      skipped: candidates.length - updated - failed,
+      failed,
+    };
+  }
+
   private needsStaticImageBackfill(imageUrl?: string | null): boolean {
     if (!imageUrl || !imageUrl.trim()) {
       return true;
     }
-    return this.isGifLikeImageValue(imageUrl);
+    if (this.isGifLikeImageValue(imageUrl)) {
+      return true;
+    }
+    // Prefer Cloudinary/HTTP URLs; re-backfill raw base64 when giftUrl exists.
+    return isInlineBase64Image(imageUrl) && !isRemoteHttpUrl(imageUrl);
   }
 
   private isGifLikeImageValue(value: string): boolean {

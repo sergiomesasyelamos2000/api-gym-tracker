@@ -6,9 +6,10 @@ import {
 } from '@app/entity-data-models';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ExercisesService } from './exercises.service';
-import { ExercisesController } from './exercises.controller';
 import { HttpModule } from '@nestjs/axios';
+import { AuthModule } from '../auth/auth.module';
+import { ExercisesController } from './exercises.controller';
+import { ExercisesService } from './exercises.service';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { HttpModule } from '@nestjs/axios';
       MuscleEntity,
       ExerciseTypeEntity,
     ]),
+    AuthModule,
   ],
   providers: [ExercisesService],
   exports: [TypeOrmModule],

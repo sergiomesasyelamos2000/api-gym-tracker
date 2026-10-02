@@ -157,21 +157,27 @@ export class RoutineService {
     id: string,
     userId: string,
   ): Promise<RoutineEntity | null> {
-    return await this.routineRepository.findOne({
-      where: { id, userId },
-      relations: {
-        routineExercises: {
-          exercise: true,
-          sets: true,
-        },
-      },
-      // 🔥 NUEVO: Ordenar por el campo order
-      order: {
-        routineExercises: {
-          order: 'ASC',
-        },
-      },
-    });
+    return await this.routineRepository
+      .createQueryBuilder('routine')
+      .leftJoinAndSelect('routine.routineExercises', 'routineExercise')
+      .leftJoinAndSelect('routineExercise.sets', 'set')
+      .leftJoin('routineExercise.exercise', 'exercise')
+      .addSelect([
+        'exercise.id',
+        'exercise.name',
+        'exercise.imageUrl',
+        'exercise.giftUrl',
+        'exercise.videoUrl',
+        'exercise.targetMuscles',
+        'exercise.equipments',
+        'exercise.bodyParts',
+        'exercise.secondaryMuscles',
+      ])
+      .where('routine.id = :id', { id })
+      .andWhere('routine.userId = :userId', { userId })
+      .orderBy('routineExercise.order', 'ASC')
+      .addOrderBy('set.order', 'ASC')
+      .getOne();
   }
 
   async update(
@@ -434,39 +440,42 @@ export class RoutineService {
   ): Promise<RoutineSessionEntity> {
     const routine = await this.routineRepository.findOne({
       where: { id: dto.routineId, userId },
-      relations: {
-        routineExercises: true,
-        sessions: true,
-      },
+      select: { id: true },
     });
 
     if (!routine) throw new Error(`Routine with id ${dto.routineId} not found`);
 
-    // Mapear ejercicios con información completa incluyendo imágenes
-    const exercises = await Promise.all(
-      (dto.exercises ?? []).map(async ex => {
-        const exercise = await this.exerciseRepository.findOne({
-          where: { id: ex.exerciseId },
-          select: {
-            id: true,
-            name: true,
-            imageUrl: true,
-            giftUrl: true,
-          },
-        });
-        if (!exercise)
-          throw new Error(`Exercise with id ${ex.exerciseId} not found`);
+    const exerciseIds = [
+      ...new Set(
+        (dto.exercises ?? [])
+          .map(ex => ex.exerciseId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
 
-        return {
-          exerciseId: exercise.id,
-          name: ex.name || ex.exerciseName || exercise.name,
-          imageUrl: ex.imageUrl || exercise.imageUrl,
-          giftUrl: ex.giftUrl || exercise.giftUrl,
-          restSeconds: ex.restSeconds,
-          sets: ex.sets,
-        };
-      }),
-    );
+    const exerciseRows =
+      exerciseIds.length > 0
+        ? await this.exerciseRepository.find({
+            where: { id: In(exerciseIds) },
+            select: { id: true, name: true },
+          })
+        : [];
+    const exerciseById = new Map(exerciseRows.map(row => [row.id, row]));
+
+    // Persist set data only — never embed imageUrl/giftUrl blobs in session jsonb.
+    const exercises = (dto.exercises ?? []).map(ex => {
+      const exercise = exerciseById.get(ex.exerciseId);
+      if (!exercise) {
+        throw new Error(`Exercise with id ${ex.exerciseId} not found`);
+      }
+
+      return {
+        exerciseId: exercise.id,
+        name: ex.name || ex.exerciseName || exercise.name,
+        restSeconds: ex.restSeconds,
+        sets: ex.sets,
+      };
+    });
 
     const session = this.sessionRepository.create({
       routine,
@@ -502,6 +511,71 @@ export class RoutineService {
       .where('routine.userId = :userId', { userId })
       .orderBy('session.createdAt', 'DESC')
       .getMany();
+  }
+
+  /**
+   * Paginated session history. Cursor format: `${createdAt.toISOString()}|${id}`
+   */
+  async getAllSessionsPage(
+    userId: string,
+    options: { limit?: number; cursor?: string } = {},
+  ): Promise<{
+    items: RoutineSessionEntity[];
+    nextCursor: string | null;
+    hasMore: boolean;
+  }> {
+    const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
+    const qb = this.sessionRepository
+      .createQueryBuilder('session')
+      .innerJoin('session.routine', 'routine')
+      .addSelect(['routine.id', 'routine.title'])
+      .where('routine.userId = :userId', { userId })
+      .orderBy('session.createdAt', 'DESC')
+      .addOrderBy('session.id', 'DESC')
+      .take(limit + 1);
+
+    if (options.cursor) {
+      const parsed = this.parseSessionCursor(options.cursor);
+      if (!parsed) {
+        throw new BadRequestException('Invalid session cursor');
+      }
+      qb.andWhere(
+        '(session.createdAt < :cursorCreatedAt OR (session.createdAt = :cursorCreatedAt AND session.id < :cursorId))',
+        {
+          cursorCreatedAt: parsed.createdAt,
+          cursorId: parsed.id,
+        },
+      );
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    const items = hasMore ? rows.slice(0, limit) : rows;
+    const last = items[items.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? this.encodeSessionCursor(last.createdAt, last.id)
+        : null;
+
+    return { items, nextCursor, hasMore };
+  }
+
+  private encodeSessionCursor(createdAt: Date | string, id: string): string {
+    const iso =
+      createdAt instanceof Date ? createdAt.toISOString() : String(createdAt);
+    return `${iso}|${id}`;
+  }
+
+  private parseSessionCursor(
+    cursor: string,
+  ): { createdAt: Date; id: string } | null {
+    const sep = cursor.lastIndexOf('|');
+    if (sep <= 0) return null;
+    const createdAtRaw = cursor.slice(0, sep);
+    const id = cursor.slice(sep + 1);
+    const createdAt = new Date(createdAtRaw);
+    if (!id || Number.isNaN(createdAt.getTime())) return null;
+    return { createdAt, id };
   }
 
   /** Slim rows for macros/TDEE — avoids shipping full exercise JSON. */

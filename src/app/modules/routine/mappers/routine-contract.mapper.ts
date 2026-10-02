@@ -1,8 +1,10 @@
 import type {
   GlobalRoutineStats,
+  PaginatedRoutineSessions,
   RoutineFolderResponse,
   RoutineResponse,
   RoutineSession,
+  RoutineSessionListItem,
 } from '@sergiomesasyelamos2000/shared';
 
 const toIso = (value: unknown): string => {
@@ -57,6 +59,53 @@ export const mapSessionToContract = (session: any): RoutineSession => ({
 
 export const mapSessionListToContract = (sessions: any[]): RoutineSession[] =>
   sessions.map(mapSessionToContract);
+
+/** Strip media blobs from session exercises for list payloads. */
+export const mapSessionToListItem = (session: any): RoutineSessionListItem => {
+  const exercises = Array.isArray(session.exercises)
+    ? session.exercises.map((exercise: any) => ({
+        exerciseId: exercise.exerciseId,
+        name: exercise.name,
+        restSeconds: exercise.restSeconds,
+        sets: Array.isArray(exercise.sets)
+          ? exercise.sets.map((set: any) => ({
+              weight: set.weight,
+              reps: set.reps,
+              completed: set.completed,
+              isRecord: set.isRecord,
+              setType: set.setType,
+            }))
+          : [],
+      }))
+    : [];
+
+  return {
+    id: session.id,
+    routineId: session.routineId ?? session.routine?.id,
+    routine: session.routine
+      ? { id: session.routine.id, title: session.routine.title }
+      : undefined,
+    exercises,
+    totalTime: Number(session.totalTime) || 0,
+    totalWeight: Number(session.totalWeight) || 0,
+    completedSets: Number(session.completedSets) || 0,
+    avgHeartRate: session.avgHeartRate ?? null,
+    maxHeartRate: session.maxHeartRate ?? null,
+    caloriesBurned: session.caloriesBurned ?? null,
+    healthMetricsSource: session.healthMetricsSource ?? null,
+    createdAt: toIso(session.createdAt),
+  };
+};
+
+export const mapPaginatedSessionsToContract = (page: {
+  items: any[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}): PaginatedRoutineSessions => ({
+  items: page.items.map(mapSessionToListItem),
+  nextCursor: page.nextCursor,
+  hasMore: page.hasMore,
+});
 
 export const mapGlobalStatsToContract = (stats: {
   totalTime?: number;

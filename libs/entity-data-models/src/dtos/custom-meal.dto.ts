@@ -59,3 +59,23 @@ export interface CustomMealResponseDto {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/** List payload without nested products JSON. */
+export interface CustomMealListItemDto {
+  id: string;
+  userId: string;
+  name: string;
+  description?: string;
+  image?: string;
+  imageSource?: MealImageSource | null;
+  productCount: number;
+  totalCalories: number;
+  totalProtein: number;
+  totalCarbs: number;
+  totalFat: number;
+  totalSugar?: number | null;
+  totalFiber?: number | null;
+  totalSodium?: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
