@@ -214,6 +214,7 @@ export interface DailyNutritionSummaryDto {
 
 export interface BarcodeScanDto {
   code: string;
+  userId?: string;
 }
 
 // ============================================

@@ -325,4 +325,8 @@ export class DailyNutritionSummaryDto {
 export class BarcodeScanDto {
   @IsString()
   code!: string;
+
+  @IsOptional()
+  @IsString()
+  userId?: string;
 }

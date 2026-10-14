@@ -8,15 +8,21 @@ import {
   FavoriteProductResponseDto,
   MappedProduct,
   OpenFoodFactsProduct,
-  OpenFoodFactsResponse,
 } from '@app/entity-data-models';
 import { HttpService } from '@nestjs/axios';
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  OnModuleInit,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { AxiosError } from 'axios';
 import { lastValueFrom } from 'rxjs';
 import { DataSource, Repository } from 'typeorm';
 import cloudinary from '../../../../config/cloudinary.config';
-import NUTRIENT_LABELS_ES from '../../../utils/nutrients-labels';
+import { mapOpenFoodFactsProductDetailed } from '../utils/off-product.mapper';
+import { lookupBarcode } from './barcode-scan.pipeline';
 
 interface USDAFood {
   fdcId: number;
@@ -1350,105 +1356,240 @@ export class ProductService implements OnModuleInit {
 
   // ==================== OPEN FOOD FACTS METHODS ====================
 
-  async scanCode(code: string): Promise<MappedProduct> {
+  async scanCode(code: string, userId?: string): Promise<MappedProduct> {
+    const result = await lookupBarcode(
+      {
+        findCustomByVariants: (uid, variants) =>
+          this.findCustomProductByBarcodeVariants(uid, variants),
+        findCatalogByVariants: variants =>
+          this.findCatalogProductByBarcodeVariants(variants),
+        fetchOpenFoodFacts: (gtin, productTypeAll) =>
+          this.fetchOffProductByGtin(gtin, productTypeAll),
+        fetchUsdaExactGtin: variants => this.fetchUsdaExactGtin(variants),
+        isCatalogUnavailableError: error =>
+          error instanceof ServiceUnavailableException,
+      },
+      code,
+      userId,
+    );
+
+    if (result.source === 'off' || result.source === 'usda') {
+      const hasNutrition =
+        result.product.calories > 0 ||
+        result.product.protein > 0 ||
+        result.product.carbohydrates > 0 ||
+        result.product.fat > 0;
+      if (hasNutrition) {
+        void this.saveProductsToCatalog(
+          [result.product],
+          result.source === 'off' ? 'off' : 'usda',
+          result.source === 'off' ? 'odbl' : 'cc0',
+        ).catch(error => {
+          console.warn('Background save to catalog (barcode) failed:', error);
+        });
+      }
+    }
+
+    return result.product;
+  }
+
+  async findCustomProductByBarcodeVariants(
+    userId: string,
+    variants: string[],
+  ): Promise<CustomProductResponseDto | null> {
+    if (!variants.length) {
+      return null;
+    }
+
+    const product = await this.customProductRepo
+      .createQueryBuilder('p')
+      .where('p.userId = :userId', { userId })
+      .andWhere(
+        `(p.barcode IN (:...variants) OR regexp_replace(COALESCE(p.barcode, ''), '[^0-9]', '', 'g') IN (:...variants))`,
+        { variants },
+      )
+      .getOne();
+
+    return product ? this.mapCustomProductToDto(product) : null;
+  }
+
+  private async findCatalogProductByBarcodeVariants(
+    variants: string[],
+  ): Promise<MappedProduct | null> {
+    if (!variants.length) {
+      return null;
+    }
+
+    const rows = await this.dataSource.query(
+      `
+        SELECT
+          p.barcode_gtin AS "code",
+          p.canonical_name AS "name",
+          p.canonical_brand AS "brand",
+          p.image_url AS "image",
+          p.serving_size AS "servingSize",
+          n.calories AS "calories",
+          n.protein AS "protein",
+          n.carbs AS "carbohydrates",
+          n.fat AS "fat",
+          n.fiber AS "fiber",
+          n.sugar AS "sugar",
+          n.sodium AS "sodium"
+        FROM nutrition_products_master p
+        LEFT JOIN nutrition_product_nutrients_per_100g n
+          ON n.product_id = p.id
+        WHERE p.barcode_gtin = ANY($1::text[])
+        ORDER BY p.quality_score DESC, p.updated_at DESC
+        LIMIT 1
+      `,
+      [variants],
+    );
+
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+
+    return {
+      code: row.code,
+      name: row.name ?? 'Producto sin nombre',
+      brand: row.brand ?? null,
+      image: row.image ?? null,
+      categories: null,
+      nutritionGrade: null,
+      servingSize: row.servingSize ?? null,
+      grams: 100,
+      calories: Number(row.calories ?? 0),
+      protein: Number(row.protein ?? 0),
+      carbohydrates: Number(row.carbohydrates ?? 0),
+      fat: Number(row.fat ?? 0),
+      fiber: row.fiber !== null && row.fiber !== undefined ? Number(row.fiber) : null,
+      sugar: row.sugar !== null && row.sugar !== undefined ? Number(row.sugar) : null,
+      sodium:
+        row.sodium !== null && row.sodium !== undefined
+          ? Number(row.sodium)
+          : null,
+      others: [],
+    };
+  }
+
+  private async fetchOffProductByGtin(
+    code: string,
+    productTypeAll: boolean,
+  ): Promise<MappedProduct | null> {
+    const fields =
+      'product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code,serving_size';
+    const params = new URLSearchParams({
+      fields,
+      lc: 'es',
+    });
+    if (productTypeAll) {
+      params.set('product_type', 'all');
+    }
+
+    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}?${params.toString()}`;
+
     try {
       const response = await lastValueFrom(
-        this.httpService.get(
-          `https://es.openfoodfacts.org/api/v2/product/${code}?fields=product_name,product_name_es,brands,categories,nutrition_grades,nutriments,image_url,code,serving_size&lc=es`,
-          {
-            headers: {
-              'User-Agent': this.OFF_USER_AGENT,
-            },
-          },
-        ),
+        this.httpService.get(url, {
+          headers: { 'User-Agent': this.OFF_USER_AGENT },
+          timeout: this.OFF_TIMEOUT_MS,
+          validateStatus: status => status < 500,
+        }),
       );
-      const product = response.data.product as OpenFoodFactsProduct;
 
-      if (!product) {
-        throw new NotFoundException(
-          `Producto con código de barras ${code} no encontrado`,
+      if (response.status === 404) {
+        return null;
+      }
+
+      if (response.status === 429 || response.status >= 500) {
+        throw new ServiceUnavailableException(
+          'No se pudo consultar el catálogo de productos.',
         );
       }
 
-      // Mapeo completo con información nutricional por 100g
-      const mappedProduct = {
-        code: product.code,
-        name:
-          product.product_name_es ??
-          product.product_name ??
-          'Producto sin nombre',
-        brand: product.brands ?? null,
-        image: product.image_url ?? null,
-        categories: product.categories ?? null,
-        nutritionGrade: product.nutrition_grades ?? null,
-        servingSize: product.serving_size ?? null,
-        grams: 100, // Base de cálculo por 100g
-        calories: Math.round(
-          product.nutriments?.['energy-kcal_100g'] ??
-            product.nutriments?.['energy-kcal'] ??
-            0,
-        ),
-        carbohydrates:
-          Math.round(
-            (product.nutriments?.['carbohydrates_100g'] ??
-              product.nutriments?.['carbohydrates'] ??
-              0) * 10,
-          ) / 10,
-        protein:
-          Math.round(
-            (product.nutriments?.['proteins_100g'] ??
-              product.nutriments?.['proteins'] ??
-              0) * 10,
-          ) / 10,
-        fat:
-          Math.round(
-            (product.nutriments?.['fat_100g'] ??
-              product.nutriments?.['fat'] ??
-              0) * 10,
-          ) / 10,
-        fiber: product.nutriments?.['fiber_100g']
-          ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
-          : null,
-        sugar: product.nutriments?.['sugars_100g']
-          ? Math.round(product.nutriments['sugars_100g'] * 10) / 10
-          : null,
-        sodium: product.nutriments?.['sodium_100g']
-          ? Math.round(product.nutriments['sodium_100g'] * 1000) / 10
-          : null,
-        saturatedFat: product.nutriments?.['saturated-fat_100g']
-          ? Math.round(product.nutriments['saturated-fat_100g'] * 10) / 10
-          : null,
-        others: Object.entries(product.nutriments ?? {})
-          .filter(
-            ([key]) =>
-              ![
-                'energy-kcal',
-                'energy-kcal_100g',
-                'energy',
-                'energy_100g',
-                'carbohydrates',
-                'carbohydrates_100g',
-                'proteins',
-                'proteins_100g',
-                'fat',
-                'fat_100g',
-                'fiber_100g',
-                'sugars_100g',
-                'sodium_100g',
-                'saturated-fat_100g',
-                'nova',
-              ].some(main => key.startsWith(main)),
-          )
-          .map(([key, value]) => ({
-            label: NUTRIENT_LABELS_ES[key] ?? key,
-            value,
-          })),
-      };
+      const status = response.data?.status;
+      const product = response.data?.product as OpenFoodFactsProduct | undefined;
+      if (status !== 1 || !product) {
+        return null;
+      }
 
-      return mappedProduct;
+      return mapOpenFoodFactsProductDetailed(product);
     } catch (error) {
-      console.error('Error en la solicitud de escaneo de código:', error);
-      throw new Error('No se pudo procesar la solicitud de escaneo de código.');
+      const axiosError = error as AxiosError;
+      const isTimeout =
+        axiosError?.code === 'ECONNABORTED' ||
+        axiosError?.code === 'ETIMEDOUT' ||
+        /timeout/i.test(axiosError?.message ?? '');
+      const status = axiosError?.response?.status;
+      const isNetwork =
+        !axiosError?.response &&
+        Boolean(
+          axiosError?.code &&
+            ['ECONNRESET', 'ENOTFOUND', 'ECONNREFUSED', 'EAI_AGAIN'].includes(
+              axiosError.code,
+            ),
+        );
+      if (
+        isTimeout ||
+        isNetwork ||
+        status === 429 ||
+        (typeof status === 'number' && status >= 500)
+      ) {
+        throw new ServiceUnavailableException(
+          'No se pudo consultar el catálogo de productos.',
+        );
+      }
+      console.warn('OFF barcode lookup failed:', axiosError?.message || error);
+      return null;
+    }
+  }
+
+  private async fetchUsdaExactGtin(
+    variants: string[],
+  ): Promise<MappedProduct | null> {
+    const apiKey = process.env.USDA_API_KEY?.trim();
+    if (!apiKey || !variants.length) {
+      return null;
+    }
+
+    const query = variants.find(v => v.length >= 8) ?? variants[0];
+    const stripZeros = (value: string) => value.replace(/^0+/, '') || '0';
+    const variantSet = new Set(variants.map(stripZeros));
+
+    try {
+      const response = await lastValueFrom(
+        this.httpService.get<USDAFoodsSearchResponse>(
+          `https://api.nal.usda.gov/fdc/v1/foods/search`,
+          {
+            params: {
+              api_key: apiKey,
+              query,
+              dataType: 'Branded',
+              pageSize: 5,
+              pageNumber: 1,
+            },
+            timeout: this.USDA_TIMEOUT_MS,
+          },
+        ),
+      );
+
+      const foods = response.data?.foods ?? [];
+      for (const food of foods) {
+        const gtin = food.gtinUpc?.trim();
+        if (!gtin) continue;
+        if (!variantSet.has(stripZeros(gtin.replace(/\D/g, '')))) {
+          continue;
+        }
+        const mapped = this.mapUSDAFoodToMappedProduct(food);
+        if (mapped) {
+          return mapped;
+        }
+      }
+      return null;
+    } catch (error) {
+      console.warn('USDA barcode lookup failed:', (error as Error)?.message || error);
+      return null;
     }
   }
 
@@ -2015,81 +2156,7 @@ export class ProductService implements OnModuleInit {
         );
       }
 
-      const mappedProduct: MappedProduct = {
-        code: product.code,
-        name:
-          product.product_name_es ??
-          product.product_name ??
-          'Producto sin nombre',
-        brand: product.brands ?? null,
-        image: product.image_url ?? null,
-        nutritionGrade: product.nutrition_grades ?? null,
-        categories: product.categories ?? null,
-        servingSize: product.serving_size ?? null,
-        grams: 100,
-        calories: Math.round(
-          product.nutriments?.['energy-kcal_100g'] ??
-            product.nutriments?.['energy-kcal'] ??
-            0,
-        ),
-        carbohydrates:
-          Math.round(
-            (product.nutriments?.['carbohydrates_100g'] ??
-              product.nutriments?.['carbohydrates'] ??
-              0) * 10,
-          ) / 10,
-        protein:
-          Math.round(
-            (product.nutriments?.['proteins_100g'] ??
-              product.nutriments?.['proteins'] ??
-              0) * 10,
-          ) / 10,
-        fat:
-          Math.round(
-            (product.nutriments?.['fat_100g'] ??
-              product.nutriments?.['fat'] ??
-              0) * 10,
-          ) / 10,
-        fiber: product.nutriments?.['fiber_100g']
-          ? Math.round(product.nutriments['fiber_100g'] * 10) / 10
-          : null,
-        sugar: product.nutriments?.['sugars_100g']
-          ? Math.round(product.nutriments['sugars_100g'] * 10) / 10
-          : null,
-        sodium: product.nutriments?.['sodium_100g']
-          ? Math.round(product.nutriments['sodium_100g'] * 1000) / 10
-          : null,
-        saturatedFat: product.nutriments?.['saturated-fat_100g']
-          ? Math.round(product.nutriments['saturated-fat_100g'] * 10) / 10
-          : null,
-        others: Object.entries(product.nutriments ?? {})
-          .filter(
-            ([key]) =>
-              ![
-                'energy-kcal',
-                'energy-kcal_100g',
-                'energy',
-                'energy_100g',
-                'carbohydrates',
-                'carbohydrates_100g',
-                'proteins',
-                'proteins_100g',
-                'fat',
-                'fat_100g',
-                'fiber_100g',
-                'sugars_100g',
-                'sodium_100g',
-                'saturated-fat_100g',
-                'nova',
-              ].some(main => key.startsWith(main)),
-          )
-          .map(([key, value]) => ({
-            label: NUTRIENT_LABELS_ES[key] ?? key,
-            value: value as string | number,
-          })),
-      };
-
-      return mappedProduct;
+      return mapOpenFoodFactsProductDetailed(product);
     } catch (error) {
       console.error('Error obteniendo detalle del producto:', error);
       throw new NotFoundException(

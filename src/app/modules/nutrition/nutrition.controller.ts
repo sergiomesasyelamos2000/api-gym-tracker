@@ -90,8 +90,7 @@ export class NutritionController {
 
   @Post('barcode')
   async scanBarcode(@Body() body: BarcodeScanDto) {
-    const product = await this.productService.scanCode(body.code);
-    return product;
+    return this.productService.scanCode(body.code, body.userId);
   }
 
   @Get('products/search')
