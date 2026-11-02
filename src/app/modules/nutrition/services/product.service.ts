@@ -22,7 +22,9 @@ import { lastValueFrom } from 'rxjs';
 import { DataSource, Repository } from 'typeorm';
 import cloudinary from '../../../../config/cloudinary.config';
 import { mapOpenFoodFactsProductDetailed } from '../utils/off-product.mapper';
+import { attachServingsToProduct } from '../utils/product-servings.util';
 import { lookupBarcode } from './barcode-scan.pipeline';
+import { parseUsdaCode } from '@sergiomesasyelamos2000/shared';
 
 interface USDAFood {
   fdcId: number;
@@ -35,6 +37,18 @@ interface USDAFood {
     nutrientName?: string;
     unitName?: string;
     value?: number;
+  }>;
+  foodPortions?: Array<{
+    id?: number;
+    amount?: number | null;
+    gramWeight?: number | null;
+    portionDescription?: string | null;
+    modifier?: string | null;
+    sequenceNumber?: number | null;
+    measureUnit?: {
+      name?: string | null;
+      abbreviation?: string | null;
+    } | null;
   }>;
 }
 
@@ -436,7 +450,7 @@ export class ProductService implements OnModuleInit {
   }
 
   private mapOpenFoodFactsProduct(product: OpenFoodFactsProduct): MappedProduct {
-    return {
+    return attachServingsToProduct({
       code: product.code,
       name:
         product.product_name_es ??
@@ -446,6 +460,7 @@ export class ProductService implements OnModuleInit {
       image: product.image_url ?? null,
       nutritionGrade: product.nutrition_grades ?? null,
       categories: product.categories ?? null,
+      servingSize: product.serving_size ?? null,
       grams: 100,
       calories: Math.round(product.nutriments?.['energy-kcal_100g'] ?? 0),
       carbohydrates:
@@ -463,7 +478,7 @@ export class ProductService implements OnModuleInit {
         ? Math.round(product.nutriments['sodium_100g'] * 1000) / 10
         : null,
       others: [],
-    };
+    });
   }
 
   private isSearchAliciousEnabled(): boolean {
@@ -561,7 +576,7 @@ export class ProductService implements OnModuleInit {
 
     const nutriments = hit.nutriments ?? {};
 
-    return {
+    return attachServingsToProduct({
       code,
       name,
       brand,
@@ -585,7 +600,7 @@ export class ProductService implements OnModuleInit {
         ? Math.round(nutriments['sodium_100g'] * 1000) / 10
         : null,
       others: [],
-    };
+    });
   }
 
   /**
@@ -1294,7 +1309,7 @@ export class ProductService implements OnModuleInit {
         ? `${food.servingSize} ${food.servingSizeUnit}`
         : null;
 
-    return {
+    return attachServingsToProduct({
       code: food.gtinUpc?.trim() || `usda-${food.fdcId}`,
       name,
       brand: food.brandOwner?.trim() || null,
@@ -1302,6 +1317,7 @@ export class ProductService implements OnModuleInit {
       categories: null,
       nutritionGrade: null,
       servingSize: serving,
+      fdcId: food.fdcId,
       grams: 100,
       calories: Math.round(calories),
       protein: Math.round(protein * 10) / 10,
@@ -1311,7 +1327,7 @@ export class ProductService implements OnModuleInit {
       sugar: sugar !== null ? Math.round(sugar * 10) / 10 : null,
       sodium: sodium !== null ? Math.round(sodium * 10) / 10 : null,
       others: [],
-    };
+    }, food.foodPortions);
   }
 
   private async searchUSDAProductsByName(
@@ -2137,6 +2153,17 @@ export class ProductService implements OnModuleInit {
   }
 
   async getProductDetail(code: string): Promise<MappedProduct> {
+    const usdaId = parseUsdaCode(code);
+    if (usdaId != null) {
+      const usdaProduct = await this.fetchUsdaFoodById(usdaId);
+      if (!usdaProduct) {
+        throw new NotFoundException(
+          `Producto USDA con código ${code} no encontrado`,
+        );
+      }
+      return usdaProduct;
+    }
+
     try {
       const response = await lastValueFrom(
         this.httpService.get(
@@ -2158,10 +2185,41 @@ export class ProductService implements OnModuleInit {
 
       return mapOpenFoodFactsProductDetailed(product);
     } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
       console.error('Error obteniendo detalle del producto:', error);
       throw new NotFoundException(
         `No se pudo obtener el detalle del producto con código ${code}`,
       );
+    }
+  }
+
+  private async fetchUsdaFoodById(
+    fdcId: number,
+  ): Promise<MappedProduct | null> {
+    const apiKey = process.env.USDA_API_KEY?.trim();
+    if (!apiKey) {
+      return null;
+    }
+
+    try {
+      const response = await lastValueFrom(
+        this.httpService.get<USDAFood>(
+          `https://api.nal.usda.gov/fdc/v1/food/${fdcId}`,
+          {
+            params: { api_key: apiKey },
+            timeout: this.USDA_TIMEOUT_MS,
+          },
+        ),
+      );
+      return this.mapUSDAFoodToMappedProduct(response.data);
+    } catch (error: any) {
+      console.warn(
+        `USDA food/${fdcId} failed:`,
+        error?.message || error,
+      );
+      return null;
     }
   }
 

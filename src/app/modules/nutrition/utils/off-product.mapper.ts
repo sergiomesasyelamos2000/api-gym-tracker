@@ -1,5 +1,6 @@
 import { MappedProduct, OpenFoodFactsProduct } from '@app/entity-data-models';
 import NUTRIENT_LABELS_ES from '../../../utils/nutrients-labels';
+import { attachServingsToProduct } from './product-servings.util';
 
 /**
  * Detailed Open Food Facts → MappedProduct mapping used by barcode scan
@@ -8,7 +9,7 @@ import NUTRIENT_LABELS_ES from '../../../utils/nutrients-labels';
 export function mapOpenFoodFactsProductDetailed(
   product: OpenFoodFactsProduct,
 ): MappedProduct {
-  return {
+  const mapped: MappedProduct = {
     code: product.code,
     name:
       product.product_name_es ??
@@ -80,6 +81,8 @@ export function mapOpenFoodFactsProductDetailed(
         value,
       })),
   };
+
+  return attachServingsToProduct(mapped);
 }
 
 export function mapCustomProductToMappedProduct(product: {
@@ -97,7 +100,7 @@ export function mapCustomProductToMappedProduct(product: {
   servingSize?: number | null;
   servingUnit?: string | null;
 }): MappedProduct {
-  return {
+  return attachServingsToProduct({
     code: product.id,
     name: product.name,
     brand: product.brand ?? null,
@@ -126,5 +129,5 @@ export function mapCustomProductToMappedProduct(product: {
         ? [{ label: 'Sodio', value: product.sodiumPer100 }]
         : []),
     ],
-  };
+  });
 }

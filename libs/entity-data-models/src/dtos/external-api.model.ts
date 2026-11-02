@@ -38,6 +38,15 @@ export interface MappedNutrient {
   value: number | string | undefined | null;
 }
 
+export type ProductServingKind = 'household' | 'gram' | 'ml' | 'package';
+
+export interface ProductServingMeasure {
+  id: string;
+  label: string;
+  grams: number;
+  kind: ProductServingKind;
+}
+
 export interface MappedProduct {
   code: string;
   name: string;
@@ -46,6 +55,8 @@ export interface MappedProduct {
   categories: string | null;
   nutritionGrade: string | null;
   servingSize?: string | null;
+  fdcId?: number | null;
+  servings?: ProductServingMeasure[];
   grams: number;
   calories: number;
   carbohydrates: number;
