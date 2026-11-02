@@ -49,7 +49,7 @@
     "@nestjs/swagger": "^11.2.0",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/typeorm": "^11.0.0",
-    "@sergiomesasyelamos2000/shared": "^1.4.0",
+    "@sergiomesasyelamos2000/shared": "^1.5.0",
     "@types/bcrypt": "^6.0.0",
     "@types/compression": "^1.8.1",
     "@types/passport-jwt": "^4.0.1",
